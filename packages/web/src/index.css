@@ -84,7 +84,8 @@ body {
 
 /* Animation for paused state */
 @keyframes pulse-border {
-  0%, 100% {
+  0%,
+  100% {
     border-color: rgba(59, 130, 246, 0.5);
   }
   50% {

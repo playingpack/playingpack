@@ -50,7 +50,11 @@ export async function registerStaticUI(server: FastifyInstance): Promise<boolean
   // SPA fallback: serve index.html for non-API routes
   server.setNotFoundHandler((request, reply) => {
     // Don't serve UI for API routes
-    if (request.url.startsWith('/v1') || request.url.startsWith('/api') || request.url.startsWith('/ws')) {
+    if (
+      request.url.startsWith('/v1') ||
+      request.url.startsWith('/api') ||
+      request.url.startsWith('/ws')
+    ) {
       return reply.code(404).send({ error: 'Not Found' });
     }
 

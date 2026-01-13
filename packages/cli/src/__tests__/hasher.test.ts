@@ -20,7 +20,7 @@ describe('normalizeBody', () => {
       model: 'gpt-4',
       request_id: '123',
       timestamp: '2024-01-01',
-      messages: []
+      messages: [],
     };
     const result = normalizeBody(input) as Record<string, unknown>;
     expect(result.request_id).toBeUndefined();
@@ -31,7 +31,7 @@ describe('normalizeBody', () => {
   it('should handle nested objects', () => {
     const input = {
       outer: { z: 1, a: 2 },
-      model: 'gpt-4'
+      model: 'gpt-4',
     };
     const result = normalizeBody(input) as Record<string, unknown>;
     const outer = result.outer as Record<string, unknown>;
@@ -42,8 +42,8 @@ describe('normalizeBody', () => {
     const input = {
       messages: [
         { role: 'user', content: 'hello' },
-        { role: 'assistant', content: 'hi' }
-      ]
+        { role: 'assistant', content: 'hi' },
+      ],
     };
     const result = normalizeBody(input) as Record<string, unknown>;
     expect(Array.isArray(result.messages)).toBe(true);

@@ -13,10 +13,7 @@ export interface Context {
 /**
  * Create context for each request
  */
-export function createContext(opts?: {
-  req?: FastifyRequest;
-  res?: FastifyReply;
-}): Context {
+export function createContext(opts?: { req?: FastifyRequest; res?: FastifyReply }): Context {
   return {
     sessionManager: getSessionManager(),
     req: opts?.req,

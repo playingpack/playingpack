@@ -18,12 +18,10 @@ export const appRouter = t.router({
   /**
    * Get a specific session
    */
-  getSession: t.procedure
-    .input(z.object({ id: z.string() }))
-    .query(({ ctx, input }) => {
-      const session = ctx.sessionManager.getSession(input.id);
-      return { session: session || null };
-    }),
+  getSession: t.procedure.input(z.object({ id: z.string() })).query(({ ctx, input }) => {
+    const session = ctx.sessionManager.getSession(input.id);
+    return { session: session || null };
+  }),
 
   /**
    * Get interceptor settings
@@ -37,34 +35,28 @@ export const appRouter = t.router({
   /**
    * Update interceptor settings
    */
-  updateSettings: t.procedure
-    .input(updateSettingsSchema)
-    .mutation(({ ctx, input }) => {
-      ctx.sessionManager.updateSettings(input.settings);
-      return {
-        settings: ctx.sessionManager.getSettings(),
-      };
-    }),
+  updateSettings: t.procedure.input(updateSettingsSchema).mutation(({ ctx, input }) => {
+    ctx.sessionManager.updateSettings(input.settings);
+    return {
+      settings: ctx.sessionManager.getSettings(),
+    };
+  }),
 
   /**
    * Allow a paused request to continue
    */
-  allowRequest: t.procedure
-    .input(allowRequestSchema)
-    .mutation(({ ctx, input }) => {
-      const success = ctx.sessionManager.allowRequest(input.requestId);
-      return { success };
-    }),
+  allowRequest: t.procedure.input(allowRequestSchema).mutation(({ ctx, input }) => {
+    const success = ctx.sessionManager.allowRequest(input.requestId);
+    return { success };
+  }),
 
   /**
    * Mock a paused request
    */
-  mockRequest: t.procedure
-    .input(mockRequestSchema)
-    .mutation(({ ctx, input }) => {
-      const success = ctx.sessionManager.mockRequest(input.requestId, input.content);
-      return { success };
-    }),
+  mockRequest: t.procedure.input(mockRequestSchema).mutation(({ ctx, input }) => {
+    const success = ctx.sessionManager.mockRequest(input.requestId, input.content);
+    return { success };
+  }),
 
   /**
    * Health check

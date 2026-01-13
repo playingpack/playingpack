@@ -23,10 +23,12 @@ export function Inspector({ session }: InspectorProps) {
       <div className="p-4 border-b border-pp-light">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-gray-400">
-              {session.id.slice(0, 8)}
-            </span>
-            <StatusBadge state={session.state} statusCode={session.statusCode} cached={session.cached} />
+            <span className="font-mono text-sm text-gray-400">{session.id.slice(0, 8)}</span>
+            <StatusBadge
+              state={session.state}
+              statusCode={session.statusCode}
+              cached={session.cached}
+            />
           </div>
           <span className="text-xs text-gray-500">
             {new Date(session.timestamp).toLocaleString()}
@@ -51,9 +53,10 @@ export function Inspector({ session }: InspectorProps) {
             onClick={() => setActiveTab(tab.id)}
             className={`
               px-4 py-2 text-sm font-medium transition-colors
-              ${activeTab === tab.id
-                ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-gray-500 hover:text-gray-300'
+              ${
+                activeTab === tab.id
+                  ? 'text-blue-400 border-b-2 border-blue-400'
+                  : 'text-gray-500 hover:text-gray-300'
               }
             `}
           >
@@ -69,9 +72,7 @@ export function Inspector({ session }: InspectorProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
-        {activeTab === 'request' && (
-          <JsonViewer data={session.body} />
-        )}
+        {activeTab === 'request' && <JsonViewer data={session.body} />}
         {activeTab === 'response' && (
           <div className="space-y-4">
             {session.responseContent ? (
@@ -135,19 +136,39 @@ function formatJson(json: string): React.ReactNode {
         .split(/(<[^>]+>[^<]*<\/[^>]+>)/)
         .map((part, j) => {
           if (part.startsWith('<key>')) {
-            return <span key={j} className="json-key">{part.slice(5, -6)}</span>;
+            return (
+              <span key={j} className="json-key">
+                {part.slice(5, -6)}
+              </span>
+            );
           }
           if (part.startsWith('<string>')) {
-            return <span key={j} className="json-string">{part.slice(8, -9)}</span>;
+            return (
+              <span key={j} className="json-string">
+                {part.slice(8, -9)}
+              </span>
+            );
           }
           if (part.startsWith('<number>')) {
-            return <span key={j} className="json-number">{part.slice(8, -9)}</span>;
+            return (
+              <span key={j} className="json-number">
+                {part.slice(8, -9)}
+              </span>
+            );
           }
           if (part.startsWith('<boolean>')) {
-            return <span key={j} className="json-boolean">{part.slice(9, -10)}</span>;
+            return (
+              <span key={j} className="json-boolean">
+                {part.slice(9, -10)}
+              </span>
+            );
           }
           if (part.startsWith('<null>')) {
-            return <span key={j} className="json-null">{part.slice(6, -7)}</span>;
+            return (
+              <span key={j} className="json-null">
+                {part.slice(6, -7)}
+              </span>
+            );
           }
           return part;
         })}

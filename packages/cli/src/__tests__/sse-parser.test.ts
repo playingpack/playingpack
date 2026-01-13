@@ -11,11 +11,13 @@ describe('SSEStreamParser', () => {
       object: 'chat.completion.chunk',
       created: Date.now(),
       model: 'gpt-4',
-      choices: [{
-        index: 0,
-        delta: { content: 'Hello' },
-        finish_reason: null,
-      }],
+      choices: [
+        {
+          index: 0,
+          delta: { content: 'Hello' },
+          finish_reason: null,
+        },
+      ],
     });
 
     parser.feed(`data: ${chunk}\n\n`);
@@ -35,11 +37,13 @@ describe('SSEStreamParser', () => {
         object: 'chat.completion.chunk',
         created: Date.now(),
         model: 'gpt-4',
-        choices: [{
-          index: 0,
-          delta: { content },
-          finish_reason: null,
-        }],
+        choices: [
+          {
+            index: 0,
+            delta: { content },
+            finish_reason: null,
+          },
+        ],
       });
       parser.feed(`data: ${chunk}\n\n`);
     }
@@ -56,21 +60,25 @@ describe('SSEStreamParser', () => {
       object: 'chat.completion.chunk',
       created: Date.now(),
       model: 'gpt-4',
-      choices: [{
-        index: 0,
-        delta: {
-          tool_calls: [{
-            index: 0,
-            id: 'call_123',
-            type: 'function',
-            function: {
-              name: 'get_weather',
-              arguments: '{"loc',
-            },
-          }],
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_123',
+                type: 'function',
+                function: {
+                  name: 'get_weather',
+                  arguments: '{"loc',
+                },
+              },
+            ],
+          },
+          finish_reason: null,
         },
-        finish_reason: null,
-      }],
+      ],
     });
 
     parser.feed(`data: ${chunk}\n\n`);
@@ -94,21 +102,25 @@ describe('SSEStreamParser', () => {
       object: 'chat.completion.chunk',
       created: Date.now(),
       model: 'gpt-4',
-      choices: [{
-        index: 0,
-        delta: {
-          tool_calls: [{
-            index: 0,
-            id: 'call_123',
-            type: 'function',
-            function: {
-              name: 'get_weather',
-              arguments: '{"loc',
-            },
-          }],
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_123',
+                type: 'function',
+                function: {
+                  name: 'get_weather',
+                  arguments: '{"loc',
+                },
+              },
+            ],
+          },
+          finish_reason: null,
         },
-        finish_reason: null,
-      }],
+      ],
     });
 
     // Second chunk with more arguments
@@ -117,18 +129,22 @@ describe('SSEStreamParser', () => {
       object: 'chat.completion.chunk',
       created: Date.now(),
       model: 'gpt-4',
-      choices: [{
-        index: 0,
-        delta: {
-          tool_calls: [{
-            index: 0,
-            function: {
-              arguments: 'ation":"SF"}',
-            },
-          }],
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                function: {
+                  arguments: 'ation":"SF"}',
+                },
+              },
+            ],
+          },
+          finish_reason: null,
         },
-        finish_reason: null,
-      }],
+      ],
     });
 
     parser.feed(`data: ${chunk1}\n\n`);
@@ -157,26 +173,28 @@ describe('SSEStreamParser', () => {
       object: 'chat.completion.chunk',
       created: Date.now(),
       model: 'gpt-4',
-      choices: [{
-        index: 0,
-        delta: {
-          tool_calls: [
-            {
-              index: 0,
-              id: 'call_1',
-              type: 'function',
-              function: { name: 'func1', arguments: '{}' },
-            },
-            {
-              index: 1,
-              id: 'call_2',
-              type: 'function',
-              function: { name: 'func2', arguments: '{}' },
-            },
-          ],
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'func1', arguments: '{}' },
+              },
+              {
+                index: 1,
+                id: 'call_2',
+                type: 'function',
+                function: { name: 'func2', arguments: '{}' },
+              },
+            ],
+          },
+          finish_reason: null,
         },
-        finish_reason: null,
-      }],
+      ],
     });
 
     parser.feed(`data: ${chunk}\n\n`);
@@ -195,11 +213,13 @@ describe('SSEStreamParser', () => {
       object: 'chat.completion.chunk',
       created: Date.now(),
       model: 'gpt-4',
-      choices: [{
-        index: 0,
-        delta: { content: 'Hello' },
-        finish_reason: null,
-      }],
+      choices: [
+        {
+          index: 0,
+          delta: { content: 'Hello' },
+          finish_reason: null,
+        },
+      ],
     });
 
     parser.feed(`data: ${chunk}\n\n`);

@@ -52,10 +52,7 @@ export function registerProxyRoutes(server: FastifyInstance, config?: ProxyConfi
 /**
  * Handle chat completions request
  */
-async function handleChatCompletions(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+async function handleChatCompletions(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const sessionManager = getSessionManager();
   const requestId = crypto.randomUUID();
   const body = request.body as Record<string, unknown>;
@@ -73,12 +70,7 @@ async function handleChatCompletions(
   });
 
   // Create session
-  sessionManager.createSession(
-    requestId,
-    'POST',
-    '/v1/chat/completions',
-    body
-  );
+  sessionManager.createSession(requestId, 'POST', '/v1/chat/completions', body);
 
   // State 0: LOOKUP - Check for cached tape
   sessionManager.updateState(requestId, 'LOOKUP');
@@ -88,7 +80,7 @@ async function handleChatCompletions(
   const shouldRecord = proxyConfig.record === 'auto';
   const replayOnly = proxyConfig.record === 'replay-only';
 
-  const hasTape = shouldCheckTape && await tapeExists(body, proxyConfig.tapesDir);
+  const hasTape = shouldCheckTape && (await tapeExists(body, proxyConfig.tapesDir));
 
   if (hasTape) {
     // State 6: REPLAY - Play cached response
@@ -329,9 +321,10 @@ async function sendMockResponse(
     .header('connection', 'keep-alive')
     .header('x-playingpack-mocked', 'true');
 
-  const generator = parsed.type === 'tool_call'
-    ? generateMockToolCallStream(parsed.functionName || 'mock_function', parsed.content)
-    : generateMockTextStream(parsed.content);
+  const generator =
+    parsed.type === 'tool_call'
+      ? generateMockToolCallStream(parsed.functionName || 'mock_function', parsed.content)
+      : generateMockTextStream(parsed.content);
 
   for await (const chunk of generator) {
     reply.raw.write(chunk);
@@ -344,10 +337,7 @@ async function sendMockResponse(
 /**
  * Handle passthrough for non-chat endpoints
  */
-async function handlePassthrough(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
+async function handlePassthrough(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   try {
     const response = await sendUpstream({
       method: request.method,
@@ -381,9 +371,7 @@ async function handlePassthrough(
 /**
  * Convert ReadableStream to string
  */
-async function streamToString(
-  stream: ReadableStream<Uint8Array> | null
-): Promise<string> {
+async function streamToString(stream: ReadableStream<Uint8Array> | null): Promise<string> {
   if (!stream) {
     return '';
   }

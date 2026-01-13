@@ -43,9 +43,7 @@ export function RequestItem({ session, selected, onClick }: RequestItemProps) {
 
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs text-gray-400">{time}</span>
-        <span className="text-sm text-gray-200 truncate">
-          {session.model || 'unknown'}
-        </span>
+        <span className="text-sm text-gray-200 truncate">{session.model || 'unknown'}</span>
       </div>
 
       {session.toolCalls.length > 0 && (
@@ -61,11 +59,7 @@ export function RequestItem({ session, selected, onClick }: RequestItemProps) {
         </div>
       )}
 
-      {session.error && (
-        <div className="text-xs text-red-400 mt-1 truncate">
-          {session.error}
-        </div>
-      )}
+      {session.error && <div className="text-xs text-red-400 mt-1 truncate">{session.error}</div>}
     </div>
   );
 }

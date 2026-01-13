@@ -21,7 +21,7 @@ export function normalizeBody(body: unknown): unknown {
 
     // Get keys, filter out non-deterministic fields, sort
     const keys = Object.keys(obj)
-      .filter(key => !['stream', 'request_id', 'timestamp'].includes(key))
+      .filter((key) => !['stream', 'request_id', 'timestamp'].includes(key))
       .sort();
 
     for (const key of keys) {

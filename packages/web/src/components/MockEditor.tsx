@@ -89,13 +89,16 @@ export function MockEditor({ session }: MockEditorProps) {
               onClick={() => handleTemplateChange(template)}
               className={`
                 px-2 py-1 text-xs rounded transition-colors
-                ${selectedTemplate === template
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-pp-gray text-gray-400 hover:bg-pp-light'
+                ${
+                  selectedTemplate === template
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-pp-gray text-gray-400 hover:bg-pp-light'
                 }
               `}
             >
-              {template === 'toolCall' ? 'Tool Call' : template.charAt(0).toUpperCase() + template.slice(1)}
+              {template === 'toolCall'
+                ? 'Tool Call'
+                : template.charAt(0).toUpperCase() + template.slice(1)}
             </button>
           ))}
         </div>

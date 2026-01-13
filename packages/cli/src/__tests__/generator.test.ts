@@ -35,9 +35,7 @@ describe('generateMockTextStream', () => {
 
     // Should have: initial, 3 content chunks, final, [DONE]
     // Content chunks: "Hell", "o Wo", "rld!"
-    const contentChunks = chunks.filter(c =>
-      c.includes('"delta"') && c.includes('"content"')
-    );
+    const contentChunks = chunks.filter((c) => c.includes('"delta"') && c.includes('"content"'));
 
     // Initial chunk has empty content, so we have 4 content chunks total
     expect(contentChunks.length).toBe(4);
@@ -58,16 +56,14 @@ describe('generateMockToolCallStream', () => {
   it('should generate valid tool call SSE stream', async () => {
     const chunks: string[] = [];
 
-    for await (const chunk of generateMockToolCallStream(
-      'get_weather',
-      '{"location":"SF"}',
-      { delayMs: 0 }
-    )) {
+    for await (const chunk of generateMockToolCallStream('get_weather', '{"location":"SF"}', {
+      delayMs: 0,
+    })) {
       chunks.push(chunk);
     }
 
     // Should have tool call chunks
-    const toolCallChunks = chunks.filter(c => c.includes('tool_calls'));
+    const toolCallChunks = chunks.filter((c) => c.includes('tool_calls'));
     expect(toolCallChunks.length).toBeGreaterThan(0);
 
     // First tool call chunk should have function name
@@ -108,7 +104,11 @@ describe('generateErrorResponse', () => {
   });
 
   it('should include code if provided', () => {
-    const response = generateErrorResponse('Rate limited', 'rate_limit_error', 'rate_limit_exceeded');
+    const response = generateErrorResponse(
+      'Rate limited',
+      'rate_limit_error',
+      'rate_limit_exceeded'
+    );
     const parsed = JSON.parse(response);
 
     expect(parsed.error.code).toBe('rate_limit_exceeded');
@@ -131,10 +131,12 @@ describe('parseMockContent', () => {
   });
 
   it('should parse tool call JSON', () => {
-    const result = parseMockContent(JSON.stringify({
-      function: 'get_weather',
-      arguments: { location: 'SF' },
-    }));
+    const result = parseMockContent(
+      JSON.stringify({
+        function: 'get_weather',
+        arguments: { location: 'SF' },
+      })
+    );
 
     expect(result.type).toBe('tool_call');
     expect(result.functionName).toBe('get_weather');

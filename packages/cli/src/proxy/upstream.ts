@@ -75,9 +75,10 @@ export async function sendUpstream(options: UpstreamOptions): Promise<UpstreamRe
   const headers = filterHeaders(options.headers);
 
   // Ensure stream is enabled
-  const body = typeof options.body === 'object' && options.body !== null
-    ? { ...options.body as object, stream: true }
-    : options.body;
+  const body =
+    typeof options.body === 'object' && options.body !== null
+      ? { ...(options.body as object), stream: true }
+      : options.body;
 
   const response = await fetch(url, {
     method: options.method,
