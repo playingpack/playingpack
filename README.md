@@ -1,6 +1,8 @@
 # PlayingPack
 
-**Chrome DevTools for AI Agents** - A local reverse proxy and debugger for intercepting, recording, and mocking OpenAI API calls.
+**Chrome DevTools for AI Agents** - A local reverse proxy and debugger for intercepting, recording, and mocking LLM API calls.
+
+Works with any OpenAI API-compatible provider: OpenAI, Ollama, Azure OpenAI, LiteLLM, vLLM, and more.
 
 ## Features
 
@@ -9,6 +11,25 @@
 - **Mock Editor** - Inject custom responses with Monaco editor (JSON syntax highlighting)
 - **Real-time Dashboard** - Watch requests stream in with live status updates
 - **SSE Streaming** - Full OpenAI-compatible streaming with proper chunk handling
+
+## Configuration
+
+Create `playingpack.config.jsonc` in your project root. See [playingpack.config.jsonc](playingpack.config.jsonc) for all available options.
+
+```jsonc
+{
+  // Any OpenAI API-compatible endpoint (default: https://api.openai.com)
+  "upstream": "http://localhost:11434/v1",
+
+  // Directory for tape storage (default: .playingpack/tapes)
+  "tapesDir": "path/to/tapes",
+
+  // auto | off | replay-only (default: auto)
+  "record": "auto"
+}
+```
+
+CLI flags override config file values.
 
 ## Quick Start
 
@@ -41,14 +62,6 @@ npx playingpack start [options]
 | `--tapes-dir <path>` | Directory for tape storage | `.playingpack/tapes` |
 | `--record <mode>` | Recording mode | `auto` |
 
-### Recording Modes
-
-| Mode | Description |
-|------|-------------|
-| `auto` | Record on cache miss, replay on hit (default) |
-| `off` | Passthrough only, no recording or replay |
-| `replay-only` | Replay only, fail if no tape exists (strict CI mode) |
-
 ### Examples
 
 ```bash
@@ -65,7 +78,7 @@ npx playingpack start --tapes-dir ./test/fixtures/tapes
 ## How It Works
 
 ```
-Your Agent  →  PlayingPack (localhost:3000)  →  OpenAI API
+Your Agent  →  PlayingPack (localhost:3000)  →  Upstream API
                     ↓
               Dashboard UI
               - View requests
@@ -89,53 +102,6 @@ LOOKUP → (cache hit) → REPLAY → done
                        done                      done
 ```
 
-## Project Structure
-
-```
-playingpack/
-├── packages/
-│   ├── shared/           # TypeScript types & Zod schemas
-│   ├── cli/              # Fastify proxy server
-│   │   ├── proxy/        # Routes, upstream, SSE parsing
-│   │   ├── tape/         # Recording & playback
-│   │   ├── interceptor/  # Session state machine
-│   │   ├── mock/         # Synthetic response generator
-│   │   ├── trpc/         # API procedures
-│   │   └── websocket/    # Real-time events
-│   └── web/              # React dashboard
-│       ├── components/   # UI components
-│       ├── stores/       # Zustand state
-│       └── lib/          # TRPC & WebSocket clients
-```
-
-## Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run in development mode (hot reload)
-pnpm dev
-
-# Run tests
-pnpm test
-
-# Type check
-pnpm typecheck
-
-# Build for production
-pnpm run build:all
-```
-
-## Tech Stack
-
-- **Runtime:** Node.js 20+
-- **Language:** TypeScript (strict mode)
-- **Server:** Fastify + TRPC + WebSocket
-- **Frontend:** React + Vite + Tailwind + Zustand
-- **Editor:** Monaco
-- **Testing:** Vitest
-
 ## API Endpoints
 
 | Endpoint | Description |
@@ -144,35 +110,6 @@ pnpm run build:all
 | `GET /ws` | WebSocket for real-time updates |
 | `/api/trpc/*` | TRPC API routes |
 | `GET /` | Dashboard UI |
-
-## Configuration
-
-PlayingPack can be configured via a config file. Create `playingpack.config.json` or `.playingpackrc.json` in your project root:
-
-```jsonc
-{
-  // Upstream API URL
-  "upstream": "https://api.openai.com",
-
-  // Directory for tape storage
-  "tapesDir": ".playingpack/tapes",
-
-  // Recording mode: auto, off, replay-only
-  "record": "auto",
-
-  // Run without UI
-  "headless": false,
-
-  "port": 3000,
-  "host": "0.0.0.0"
-}
-```
-
-All fields are optional. Comments are supported. CLI flags override config file values.
-
-### Tape Storage
-
-Recorded responses are stored as JSON files, keyed by a SHA-256 hash of the normalized request body.
 
 ## License
 

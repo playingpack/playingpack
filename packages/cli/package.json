@@ -1,6 +1,6 @@
 {
-  "name": "playingpack",
-  "version": "1.0.0",
+  "name": "@playingpack/cli",
+  "version": "0.1.0",
   "description": "Chrome DevTools for AI Agents - Local reverse proxy and debugger",
   "type": "module",
   "bin": {
@@ -11,12 +11,23 @@
     "dist",
     "public"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/playingpack/playingpack.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/playingpack/playingpack#readme",
+  "bugs": {
+    "url": "https://github.com/playingpack/playingpack/issues"
+  },
+  "author": "Geoptly Intelligence Inc.",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup",
     "start": "node dist/index.js",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "cd ../.. && pnpm run build:all"
   },
@@ -30,8 +41,7 @@
     "fastify": "^4.26.0",
     "get-port": "^7.0.0",
     "ws": "^8.16.0",
-    "zod": "^3.22.4",
-    "@playingpack/shared": "workspace:*"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
@@ -39,6 +49,7 @@
     "tsup": "^8.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
+    "@vitest/coverage-v8": "^1.2.0",
     "vitest": "^1.2.0"
   },
   "engines": {
@@ -53,5 +64,5 @@
     "mock",
     "testing"
   ],
-  "license": "MIT"
+  "license": "BUSL-1.1"
 }
