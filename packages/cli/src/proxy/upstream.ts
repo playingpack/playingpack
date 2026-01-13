@@ -36,7 +36,7 @@ export function redactApiKey(key: string): string {
 /**
  * Filter headers to forward to upstream
  */
-function filterHeaders(headers: IncomingHttpHeaders): Headers {
+function filterHeaders(headers: IncomingHttpHeaders, stream: boolean = true): Headers {
   const filtered = new Headers();
 
   // Headers to forward
@@ -59,8 +59,12 @@ function filterHeaders(headers: IncomingHttpHeaders): Headers {
     }
   }
 
-  // Always request streaming
-  filtered.set('accept', 'text/event-stream');
+  // Set accept header based on stream parameter
+  if (stream) {
+    filtered.set('accept', 'text/event-stream');
+  } else {
+    filtered.set('accept', 'application/json');
+  }
 
   return filtered;
 }
@@ -72,18 +76,21 @@ export async function sendUpstream(options: UpstreamOptions): Promise<UpstreamRe
   const baseUrl = options.upstreamUrl || OPENAI_API_URL;
   const url = `${baseUrl}${options.path}`;
 
-  const headers = filterHeaders(options.headers);
+  // Extract stream parameter from body (default true per OpenAI spec)
+  const stream =
+    typeof options.body === 'object' &&
+    options.body !== null &&
+    'stream' in options.body &&
+    typeof (options.body as Record<string, unknown>).stream === 'boolean'
+      ? (options.body as Record<string, unknown>).stream
+      : true;
 
-  // Ensure stream is enabled
-  const body =
-    typeof options.body === 'object' && options.body !== null
-      ? { ...(options.body as object), stream: true }
-      : options.body;
+  const headers = filterHeaders(options.headers, stream as boolean);
 
   const response = await fetch(url, {
     method: options.method,
     headers,
-    body: JSON.stringify(body),
+    body: JSON.stringify(options.body),
   });
 
   return {

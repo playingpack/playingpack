@@ -225,6 +225,64 @@ export function generateErrorResponse(
 }
 
 /**
+ * Tool call structure for non-streaming responses
+ */
+export interface ToolCallResponse {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+/**
+ * Generate a non-streaming chat completion response (JSON format)
+ */
+export function generateNonStreamingResponse(
+  content: string | null,
+  toolCalls?: ToolCallResponse[],
+  model: string = 'gpt-4'
+): object {
+  const id = generateMockId();
+  const created = Math.floor(Date.now() / 1000);
+
+  const message: {
+    role: 'assistant';
+    content: string | null;
+    tool_calls?: ToolCallResponse[];
+  } = {
+    role: 'assistant',
+    content: toolCalls ? null : content,
+  };
+
+  if (toolCalls && toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
+
+  const finishReason = toolCalls && toolCalls.length > 0 ? 'tool_calls' : 'stop';
+
+  return {
+    id,
+    object: 'chat.completion',
+    created,
+    model,
+    choices: [
+      {
+        index: 0,
+        message,
+        finish_reason: finishReason,
+      },
+    ],
+    usage: {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+    },
+  };
+}
+
+/**
  * Parse mock content and determine type
  */
 export function parseMockContent(content: string): {

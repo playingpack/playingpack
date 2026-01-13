@@ -9,6 +9,7 @@ import {
   generateMockTextStream,
   generateMockToolCallStream,
   generateErrorResponse,
+  generateNonStreamingResponse,
   parseMockContent,
 } from '../mock/generator.js';
 import { logger } from '../logger.js';
@@ -57,16 +58,21 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   const requestId = crypto.randomUUID();
   const body = request.body as Record<string, unknown>;
 
+  // Extract stream parameter (default true per OpenAI spec)
+  const clientStream = body.stream !== false;
+
   // Log request (redact API key)
   const authHeader = request.headers.authorization || '';
   console.log(`[${requestId.slice(0, 8)}] POST /v1/chat/completions`);
   console.log(`  Model: ${body.model || 'unknown'}`);
+  console.log(`  Stream: ${clientStream}`);
   console.log(`  Auth: ${redactApiKey(authHeader.replace('Bearer ', ''))}`);
 
   logger.info('Request received', {
     requestId,
     path: '/v1/chat/completions',
     model: body.model,
+    stream: clientStream,
   });
 
   // Create session
@@ -86,7 +92,7 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
     // State 6: REPLAY - Play cached response
     console.log(`  [CACHE HIT] Replaying from tape`);
     logger.info('Cache hit', { requestId, model: body.model });
-    await replayFromTape(request, reply, requestId, body);
+    await replayFromTape(request, reply, requestId, body, clientStream);
     return;
   }
 
@@ -128,8 +134,14 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
       return;
     }
 
-    // State 2: STREAMING - Stream response
-    await streamResponse(request, reply, requestId, response, body, shouldRecord);
+    // Route to appropriate handler based on streaming mode
+    if (clientStream) {
+      // State 2: STREAMING - Stream response
+      await streamResponse(request, reply, requestId, response, body, shouldRecord);
+    } else {
+      // Handle non-streaming response
+      await handleNonStreamingResponse(request, reply, requestId, response, body, shouldRecord);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`  [ERROR] ${message}`);
@@ -212,7 +224,7 @@ async function streamResponse(
 
     if (interceptResult.action === 'mock') {
       // State 5: INJECT - Send mock response instead
-      await sendMockResponse(reply, requestId, interceptResult.mockContent || '');
+      await sendMockResponse(reply, requestId, interceptResult.mockContent || '', true);
       return;
     }
   }
@@ -237,13 +249,112 @@ async function streamResponse(
 }
 
 /**
+ * Handle non-streaming response from upstream
+ */
+async function handleNonStreamingResponse(
+  _request: FastifyRequest,
+  reply: FastifyReply,
+  requestId: string,
+  response: { status: number; headers: Headers; body: ReadableStream<Uint8Array> | null },
+  requestBody: unknown,
+  shouldRecord: boolean
+): Promise<void> {
+  const sessionManager = getSessionManager();
+  const recorder = shouldRecord ? new TapeRecorder(proxyConfig.tapesDir) : null;
+  recorder?.start(requestBody);
+
+  sessionManager.updateState(requestId, 'STREAMING');
+
+  if (!response.body) {
+    reply.code(response.status).header('content-type', 'application/json').send('');
+    return;
+  }
+
+  // Read the entire JSON response
+  const jsonResponse = await streamToString(response.body);
+
+  // Record for tape (as raw JSON)
+  recorder?.recordChunk(jsonResponse);
+
+  // Parse response to extract content and tool calls for session manager
+  try {
+    const parsed = JSON.parse(jsonResponse) as {
+      choices?: Array<{
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{
+            id: string;
+            type: string;
+            function: { name: string; arguments: string };
+          }>;
+        };
+        finish_reason?: string;
+      }>;
+    };
+
+    if (parsed.choices?.[0]?.message) {
+      const message = parsed.choices[0].message;
+      if (message.content) {
+        sessionManager.updateContent(requestId, message.content);
+      }
+      if (message.tool_calls) {
+        for (const tc of message.tool_calls) {
+          sessionManager.addToolCall(requestId, {
+            index: 0,
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          });
+          console.log(`  [TOOL CALL] ${tc.function.name}`);
+        }
+      }
+    }
+
+    sessionManager.setRawResponse(requestId, JSON.stringify(parsed, null, 2));
+  } catch {
+    // If parsing fails, still store raw response
+    sessionManager.setRawResponse(requestId, jsonResponse);
+  }
+
+  // Save tape
+  if (recorder) {
+    try {
+      const tapePath = await recorder.save(response.status);
+      console.log(`  [TAPE] Saved to ${tapePath}`);
+    } catch (error) {
+      console.error(`  [TAPE ERROR] Failed to save tape:`, error);
+    }
+  }
+
+  // Check if we should intercept
+  if (sessionManager.shouldIntercept(requestId)) {
+    console.log(`  [INTERCEPT] Pausing for user action`);
+
+    const interceptResult = await sessionManager.intercept(requestId);
+    console.log(`  [ACTION] ${interceptResult.action}`);
+
+    if (interceptResult.action === 'mock') {
+      await sendMockResponse(reply, requestId, interceptResult.mockContent || '', false);
+      return;
+    }
+  }
+
+  // Send JSON response
+  reply.code(response.status).header('content-type', 'application/json').send(jsonResponse);
+
+  sessionManager.complete(requestId, response.status, false);
+  logger.info('Request completed', { requestId, status: response.status, cached: false });
+}
+
+/**
  * Replay response from tape
  */
 async function replayFromTape(
   _request: FastifyRequest,
   reply: FastifyReply,
   requestId: string,
-  requestBody: unknown
+  requestBody: unknown,
+  clientStream: boolean
 ): Promise<void> {
   const sessionManager = getSessionManager();
   sessionManager.updateState(requestId, 'REPLAY');
@@ -256,40 +367,93 @@ async function replayFromTape(
     return;
   }
 
-  // Set up SSE headers
-  reply
-    .code(player.getStatus())
-    .header('content-type', 'text/event-stream')
-    .header('cache-control', 'no-cache')
-    .header('connection', 'keep-alive')
-    .header('x-playingpack-cached', 'true');
+  if (clientStream) {
+    // Streaming replay - SSE format
+    reply
+      .code(player.getStatus())
+      .header('content-type', 'text/event-stream')
+      .header('cache-control', 'no-cache')
+      .header('connection', 'keep-alive')
+      .header('x-playingpack-cached', 'true');
 
-  // SSE parser for extracting content and tool calls
-  const parser = createSSEParser({
-    onToolCall: (toolCall) => {
-      sessionManager.addToolCall(requestId, toolCall);
-      console.log(`  [TOOL CALL] ${toolCall.name}`);
-    },
-    onContent: (content) => {
-      sessionManager.updateContent(requestId, content);
-    },
-  });
+    // SSE parser for extracting content and tool calls
+    const parser = createSSEParser({
+      onToolCall: (toolCall) => {
+        sessionManager.addToolCall(requestId, toolCall);
+        console.log(`  [TOOL CALL] ${toolCall.name}`);
+      },
+      onContent: (content) => {
+        sessionManager.updateContent(requestId, content);
+      },
+    });
 
-  // Replay with timing and buffer for raw response
-  const buffer: string[] = [];
-  for await (const chunk of player.replay()) {
-    parser.feed(chunk);
-    buffer.push(chunk);
-    reply.raw.write(chunk);
+    // Replay with timing
+    for await (const chunk of player.replay()) {
+      parser.feed(chunk);
+      reply.raw.write(chunk);
+    }
+
+    // Store assembled message for display
+    const assembledMessage = parser.getAssembledMessage();
+    sessionManager.setRawResponse(requestId, JSON.stringify(assembledMessage, null, 2));
+
+    sessionManager.complete(requestId, player.getStatus(), true);
+    logger.info('Request completed', { requestId, status: player.getStatus(), cached: true });
+    reply.raw.end();
+  } else {
+    // Non-streaming replay - JSON format
+    // Collect all chunks into single response (tape stores raw JSON for non-streaming)
+    let jsonResponse = '';
+    for await (const chunk of player.replay()) {
+      jsonResponse += chunk;
+    }
+
+    // Parse for session manager
+    try {
+      const parsed = JSON.parse(jsonResponse) as {
+        choices?: Array<{
+          message?: {
+            content?: string | null;
+            tool_calls?: Array<{
+              id: string;
+              type: string;
+              function: { name: string; arguments: string };
+            }>;
+          };
+        }>;
+      };
+
+      if (parsed.choices?.[0]?.message) {
+        const message = parsed.choices[0].message;
+        if (message.content) {
+          sessionManager.updateContent(requestId, message.content);
+        }
+        if (message.tool_calls) {
+          for (const tc of message.tool_calls) {
+            sessionManager.addToolCall(requestId, {
+              index: 0,
+              id: tc.id,
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            });
+            console.log(`  [TOOL CALL] ${tc.function.name}`);
+          }
+        }
+      }
+      sessionManager.setRawResponse(requestId, JSON.stringify(parsed, null, 2));
+    } catch {
+      sessionManager.setRawResponse(requestId, jsonResponse);
+    }
+
+    reply
+      .code(player.getStatus())
+      .header('content-type', 'application/json')
+      .header('x-playingpack-cached', 'true')
+      .send(jsonResponse);
+
+    sessionManager.complete(requestId, player.getStatus(), true);
+    logger.info('Request completed', { requestId, status: player.getStatus(), cached: true });
   }
-
-  // Store assembled message for display
-  const assembledMessage = parser.getAssembledMessage();
-  sessionManager.setRawResponse(requestId, JSON.stringify(assembledMessage, null, 2));
-
-  sessionManager.complete(requestId, player.getStatus(), true);
-  logger.info('Request completed', { requestId, status: player.getStatus(), cached: true });
-  reply.raw.end();
 }
 
 /**
@@ -298,13 +462,14 @@ async function replayFromTape(
 async function sendMockResponse(
   reply: FastifyReply,
   requestId: string,
-  mockContent: string
+  mockContent: string,
+  clientStream: boolean = true
 ): Promise<void> {
   const sessionManager = getSessionManager();
   const parsed = parseMockContent(mockContent);
 
   if (parsed.type === 'error') {
-    // Send error response
+    // Send error response (same format for both streaming and non-streaming)
     reply
       .code(400)
       .header('content-type', 'application/json')
@@ -313,25 +478,53 @@ async function sendMockResponse(
     return;
   }
 
-  // Send streamed response
-  reply
-    .code(200)
-    .header('content-type', 'text/event-stream')
-    .header('cache-control', 'no-cache')
-    .header('connection', 'keep-alive')
-    .header('x-playingpack-mocked', 'true');
+  if (clientStream) {
+    // Send streamed SSE response
+    reply
+      .code(200)
+      .header('content-type', 'text/event-stream')
+      .header('cache-control', 'no-cache')
+      .header('connection', 'keep-alive')
+      .header('x-playingpack-mocked', 'true');
 
-  const generator =
-    parsed.type === 'tool_call'
-      ? generateMockToolCallStream(parsed.functionName || 'mock_function', parsed.content)
-      : generateMockTextStream(parsed.content);
+    const generator =
+      parsed.type === 'tool_call'
+        ? generateMockToolCallStream(parsed.functionName || 'mock_function', parsed.content)
+        : generateMockTextStream(parsed.content);
 
-  for await (const chunk of generator) {
-    reply.raw.write(chunk);
+    for await (const chunk of generator) {
+      reply.raw.write(chunk);
+    }
+
+    sessionManager.complete(requestId, 200, false);
+    reply.raw.end();
+  } else {
+    // Send non-streaming JSON response
+    const toolCalls =
+      parsed.type === 'tool_call'
+        ? [
+            {
+              id: `call_mock_${Date.now()}`,
+              type: 'function' as const,
+              function: {
+                name: parsed.functionName || 'mock_function',
+                arguments: parsed.content,
+              },
+            },
+          ]
+        : undefined;
+
+    const content = parsed.type === 'text' ? parsed.content : null;
+    const response = generateNonStreamingResponse(content, toolCalls);
+
+    reply
+      .code(200)
+      .header('content-type', 'application/json')
+      .header('x-playingpack-mocked', 'true')
+      .send(JSON.stringify(response));
+
+    sessionManager.complete(requestId, 200, false);
   }
-
-  sessionManager.complete(requestId, 200, false);
-  reply.raw.end();
 }
 
 /**

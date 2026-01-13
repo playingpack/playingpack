@@ -3,6 +3,7 @@ import {
   generateMockTextStream,
   generateMockToolCallStream,
   generateErrorResponse,
+  generateNonStreamingResponse,
   parseMockContent,
 } from '../mock/generator.js';
 
@@ -112,6 +113,74 @@ describe('generateErrorResponse', () => {
     const parsed = JSON.parse(response);
 
     expect(parsed.error.code).toBe('rate_limit_exceeded');
+  });
+});
+
+describe('generateNonStreamingResponse', () => {
+  it('should generate valid non-streaming text response', () => {
+    const response = generateNonStreamingResponse('Hello world') as {
+      id: string;
+      object: string;
+      choices: Array<{
+        message: { role: string; content: string | null };
+        finish_reason: string;
+      }>;
+    };
+
+    expect(response.id).toContain('chatcmpl-mock-');
+    expect(response.object).toBe('chat.completion');
+    expect(response.choices).toHaveLength(1);
+    expect(response.choices[0].message.role).toBe('assistant');
+    expect(response.choices[0].message.content).toBe('Hello world');
+    expect(response.choices[0].finish_reason).toBe('stop');
+  });
+
+  it('should generate valid non-streaming tool call response', () => {
+    const toolCalls = [
+      {
+        id: 'call_123',
+        type: 'function' as const,
+        function: {
+          name: 'get_weather',
+          arguments: '{"location":"SF"}',
+        },
+      },
+    ];
+
+    const response = generateNonStreamingResponse(null, toolCalls) as {
+      choices: Array<{
+        message: {
+          role: string;
+          content: string | null;
+          tool_calls?: typeof toolCalls;
+        };
+        finish_reason: string;
+      }>;
+    };
+
+    expect(response.choices[0].message.content).toBeNull();
+    expect(response.choices[0].message.tool_calls).toHaveLength(1);
+    expect(response.choices[0].message.tool_calls?.[0].function.name).toBe('get_weather');
+    expect(response.choices[0].finish_reason).toBe('tool_calls');
+  });
+
+  it('should include usage object', () => {
+    const response = generateNonStreamingResponse('Hello') as {
+      usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+    };
+
+    expect(response.usage).toBeDefined();
+    expect(response.usage.prompt_tokens).toBe(0);
+    expect(response.usage.completion_tokens).toBe(0);
+    expect(response.usage.total_tokens).toBe(0);
+  });
+
+  it('should use provided model', () => {
+    const response = generateNonStreamingResponse('Hello', undefined, 'gpt-4-turbo') as {
+      model: string;
+    };
+
+    expect(response.model).toBe('gpt-4-turbo');
   });
 });
 
