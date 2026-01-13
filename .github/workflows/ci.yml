@@ -115,7 +115,7 @@ jobs:
         run: pnpm --filter playingpack test:coverage
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: packages/cli/coverage/lcov.info
           fail_ci_if_error: false
