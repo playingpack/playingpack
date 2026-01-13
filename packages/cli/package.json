@@ -1,20 +1,28 @@
 {
-  "name": "@playingpack/cli",
+  "name": "playingpack",
   "version": "0.1.0",
-  "description": "Chrome DevTools for AI Agents - Local reverse proxy and debugger",
+  "description": "Chrome DevTools for AI Agents - Local reverse proxy and debugger for LLM API calls",
   "type": "module",
   "bin": {
     "playingpack": "./dist/index.js"
   },
-  "main": "./dist/index.js",
+  "main": "./dist/config-helper.js",
+  "types": "./dist/config-helper.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/config-helper.d.ts",
+      "import": "./dist/config-helper.js"
+    }
+  },
   "files": [
     "dist",
-    "public"
+    "public",
+    "README.md",
+    "LICENSE"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/playingpack/playingpack.git",
-    "directory": "packages/cli"
+    "url": "https://github.com/playingpack/playingpack.git"
   },
   "homepage": "https://github.com/playingpack/playingpack#readme",
   "bugs": {
@@ -32,6 +40,7 @@
     "prepublishOnly": "cd ../.. && pnpm run build:all"
   },
   "dependencies": {
+    "jiti": "^2.4.2",
     "@fastify/cors": "^9.0.1",
     "@fastify/static": "^7.0.1",
     "@fastify/websocket": "^10.0.1",

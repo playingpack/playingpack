@@ -24,8 +24,7 @@ export async function startServer(config: PlayingPackConfig): Promise<{
 
   // Initialize session manager with config settings
   initSessionManager({
-    pauseEnabled: config.pauseEnabled,
-    pauseOnToolCalls: config.pauseOnToolCalls,
+    pause: config.pause,
   });
 
   // Initialize file logger

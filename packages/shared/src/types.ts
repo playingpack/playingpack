@@ -4,15 +4,15 @@
 
 // Request state machine states
 export type RequestState =
-  | 'LOOKUP'      // Checking for cached tape
-  | 'CONNECT'     // Opening upstream connection
-  | 'STREAMING'   // Piping chunks through
-  | 'INTERCEPT'   // Paused, waiting for user action
-  | 'FLUSH'       // Resuming with real data
-  | 'INJECT'      // Sending mock data
-  | 'REPLAY'      // Playing back cached tape
-  | 'COMPLETE'    // Request finished
-  | 'ERROR';      // Request errored
+  | 'LOOKUP' // Checking for cached tape
+  | 'CONNECT' // Opening upstream connection
+  | 'STREAMING' // Piping chunks through
+  | 'INTERCEPT' // Paused, waiting for user action
+  | 'FLUSH' // Resuming with real data
+  | 'INJECT' // Sending mock data
+  | 'REPLAY' // Playing back cached tape
+  | 'COMPLETE' // Request finished
+  | 'ERROR'; // Request errored
 
 // Tape chunk - represents a single SSE event with timing
 export interface TapeChunk {
@@ -119,10 +119,7 @@ export interface RequestCompleteEvent {
 }
 
 // Union of all WebSocket events
-export type WSEvent =
-  | InterceptEvent
-  | RequestUpdateEvent
-  | RequestCompleteEvent;
+export type WSEvent = InterceptEvent | RequestUpdateEvent | RequestCompleteEvent;
 
 // Mock request payload from UI
 export interface MockRequest {
@@ -138,14 +135,15 @@ export interface AllowRequest {
 
 // Interceptor settings
 export interface InterceptorSettings {
-  /** Whether pause mode is enabled */
-  pauseEnabled: boolean;
-  /** Whether to pause on all requests or only tool calls */
-  pauseOnToolCalls: boolean;
+  /** Pause mode: "off" | "tool-calls" | "all" (default: off) */
+  pause: PauseMode;
 }
 
 // Recording mode for VCR
 export type RecordMode = 'auto' | 'off' | 'replay-only';
+
+// Pause mode for interceptor
+export type PauseMode = 'off' | 'tool-calls' | 'all';
 
 // PlayingPack configuration
 export interface PlayingPackConfig {
@@ -159,14 +157,12 @@ export interface PlayingPackConfig {
   record: RecordMode;
   /** Run without UI (default: false) */
   headless: boolean;
-  /** Port to listen on (default: 3000) */
+  /** Port to listen on (default: 4747) */
   port: number;
   /** Host to bind to (default: 0.0.0.0) */
   host: string;
-  /** Whether pause mode is enabled (default: false) */
-  pauseEnabled: boolean;
-  /** Whether to pause on all requests or only tool calls (default: true) */
-  pauseOnToolCalls: boolean;
+  /** Pause mode: "off" | "tool-calls" | "all" (default: off) */
+  pause: PauseMode;
 }
 
 // Server configuration (legacy, kept for compatibility)
@@ -175,6 +171,29 @@ export interface ServerConfig {
   host: string;
   upstreamUrl: string;
   tapesDir: string;
+}
+
+// User config input (partial, with defaults applied later)
+export type PlayingPackUserConfig = Partial<PlayingPackConfig>;
+
+/**
+ * Helper function for creating type-safe configuration.
+ * Provides autocomplete and validation for config files.
+ *
+ * @example
+ * ```ts
+ * // playingpack.config.ts
+ * import { defineConfig } from 'playingpack';
+ *
+ * export default defineConfig({
+ *   upstream: process.env.LLM_API_URL ?? 'https://api.openai.com',
+ *   record: process.env.CI ? 'replay-only' : 'auto',
+ *   headless: !!process.env.CI,
+ * });
+ * ```
+ */
+export function defineConfig(config: PlayingPackUserConfig): PlayingPackUserConfig {
+  return config;
 }
 
 // TRPC router input/output types

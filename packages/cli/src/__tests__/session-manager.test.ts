@@ -15,12 +15,10 @@ describe('SessionManager', () => {
 
   describe('createSession', () => {
     it('should create a new session', () => {
-      const session = manager.createSession(
-        'test-id',
-        'POST',
-        '/v1/chat/completions',
-        { model: 'gpt-4', messages: [] }
-      );
+      const session = manager.createSession('test-id', 'POST', '/v1/chat/completions', {
+        model: 'gpt-4',
+        messages: [],
+      });
 
       expect(session.id).toBe('test-id');
       expect(session.method).toBe('POST');
@@ -37,9 +35,7 @@ describe('SessionManager', () => {
 
       manager.createSession('test-id', 'POST', '/v1/chat/completions', {});
 
-      expect(callback).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'request_update' })
-      );
+      expect(callback).toHaveBeenCalledWith(expect.objectContaining({ type: 'request_update' }));
     });
   });
 
@@ -132,8 +128,8 @@ describe('SessionManager', () => {
       expect(manager.shouldIntercept('test-id')).toBe(false);
     });
 
-    it('should return true when pause is enabled and tool call detected', () => {
-      manager.updateSettings({ pauseEnabled: true, pauseOnToolCalls: true });
+    it('should return true when pause is tool-calls and tool call detected', () => {
+      manager.updateSettings({ pause: 'tool-calls' });
       manager.createSession('test-id', 'POST', '/path', {});
       manager.addToolCall('test-id', {
         index: 0,
@@ -145,15 +141,15 @@ describe('SessionManager', () => {
       expect(manager.shouldIntercept('test-id')).toBe(true);
     });
 
-    it('should return false when pause on tool calls only and no tool calls', () => {
-      manager.updateSettings({ pauseEnabled: true, pauseOnToolCalls: true });
+    it('should return false when pause is tool-calls and no tool calls', () => {
+      manager.updateSettings({ pause: 'tool-calls' });
       manager.createSession('test-id', 'POST', '/path', {});
 
       expect(manager.shouldIntercept('test-id')).toBe(false);
     });
 
-    it('should return true for all requests when pauseOnToolCalls is false', () => {
-      manager.updateSettings({ pauseEnabled: true, pauseOnToolCalls: false });
+    it('should return true for all requests when pause is all', () => {
+      manager.updateSettings({ pause: 'all' });
       manager.createSession('test-id', 'POST', '/path', {});
 
       expect(manager.shouldIntercept('test-id')).toBe(true);
@@ -162,7 +158,7 @@ describe('SessionManager', () => {
 
   describe('intercept and allowRequest', () => {
     it('should pause and resume with allow', async () => {
-      manager.updateSettings({ pauseEnabled: true });
+      manager.updateSettings({ pause: 'all' });
       manager.createSession('test-id', 'POST', '/path', {});
 
       const interceptPromise = manager.intercept('test-id');
@@ -179,7 +175,7 @@ describe('SessionManager', () => {
 
   describe('intercept and mockRequest', () => {
     it('should pause and resume with mock', async () => {
-      manager.updateSettings({ pauseEnabled: true });
+      manager.updateSettings({ pause: 'all' });
       manager.createSession('test-id', 'POST', '/path', {});
 
       const interceptPromise = manager.intercept('test-id');
@@ -198,15 +194,13 @@ describe('SessionManager', () => {
   describe('settings', () => {
     it('should get and update settings', () => {
       expect(manager.getSettings()).toEqual({
-        pauseEnabled: false,
-        pauseOnToolCalls: true,
+        pause: 'off',
       });
 
-      manager.updateSettings({ pauseEnabled: true });
+      manager.updateSettings({ pause: 'tool-calls' });
 
       expect(manager.getSettings()).toEqual({
-        pauseEnabled: true,
-        pauseOnToolCalls: true,
+        pause: 'tool-calls',
       });
     });
   });

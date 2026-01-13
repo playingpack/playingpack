@@ -1,47 +1,59 @@
 import { z } from 'zod';
 
 // OpenAI Chat Completion request schema
-export const chatCompletionRequestSchema = z.object({
-  model: z.string(),
-  messages: z.array(z.object({
-    role: z.enum(['system', 'user', 'assistant', 'tool']),
-    content: z.union([z.string(), z.null(), z.array(z.any())]).optional(),
-    name: z.string().optional(),
-    tool_calls: z.array(z.any()).optional(),
-    tool_call_id: z.string().optional(),
-  })),
-  temperature: z.number().optional(),
-  top_p: z.number().optional(),
-  n: z.number().optional(),
-  stream: z.boolean().optional(),
-  stop: z.union([z.string(), z.array(z.string())]).optional(),
-  max_tokens: z.number().optional(),
-  presence_penalty: z.number().optional(),
-  frequency_penalty: z.number().optional(),
-  logit_bias: z.record(z.number()).optional(),
-  user: z.string().optional(),
-  tools: z.array(z.object({
-    type: z.literal('function'),
-    function: z.object({
-      name: z.string(),
-      description: z.string().optional(),
-      parameters: z.any().optional(),
-    }),
-  })).optional(),
-  tool_choice: z.union([
-    z.literal('none'),
-    z.literal('auto'),
-    z.literal('required'),
-    z.object({
-      type: z.literal('function'),
-      function: z.object({ name: z.string() }),
-    }),
-  ]).optional(),
-  response_format: z.object({
-    type: z.enum(['text', 'json_object']),
-  }).optional(),
-  seed: z.number().optional(),
-}).passthrough(); // Allow additional properties
+export const chatCompletionRequestSchema = z
+  .object({
+    model: z.string(),
+    messages: z.array(
+      z.object({
+        role: z.enum(['system', 'user', 'assistant', 'tool']),
+        content: z.union([z.string(), z.null(), z.array(z.any())]).optional(),
+        name: z.string().optional(),
+        tool_calls: z.array(z.any()).optional(),
+        tool_call_id: z.string().optional(),
+      })
+    ),
+    temperature: z.number().optional(),
+    top_p: z.number().optional(),
+    n: z.number().optional(),
+    stream: z.boolean().optional(),
+    stop: z.union([z.string(), z.array(z.string())]).optional(),
+    max_tokens: z.number().optional(),
+    presence_penalty: z.number().optional(),
+    frequency_penalty: z.number().optional(),
+    logit_bias: z.record(z.number()).optional(),
+    user: z.string().optional(),
+    tools: z
+      .array(
+        z.object({
+          type: z.literal('function'),
+          function: z.object({
+            name: z.string(),
+            description: z.string().optional(),
+            parameters: z.any().optional(),
+          }),
+        })
+      )
+      .optional(),
+    tool_choice: z
+      .union([
+        z.literal('none'),
+        z.literal('auto'),
+        z.literal('required'),
+        z.object({
+          type: z.literal('function'),
+          function: z.object({ name: z.string() }),
+        }),
+      ])
+      .optional(),
+    response_format: z
+      .object({
+        type: z.enum(['text', 'json_object']),
+      })
+      .optional(),
+    seed: z.number().optional(),
+  })
+  .passthrough(); // Allow additional properties
 
 // Mock request schema
 export const mockRequestSchema = z.object({
@@ -57,8 +69,7 @@ export const allowRequestSchema = z.object({
 
 // Interceptor settings schema
 export const interceptorSettingsSchema = z.object({
-  pauseEnabled: z.boolean(),
-  pauseOnToolCalls: z.boolean(),
+  pause: z.enum(['off', 'tool-calls', 'all']),
 });
 
 // Partial interceptor settings for updates
@@ -94,6 +105,9 @@ export const tapeSchema = z.object({
 // Recording mode schema
 export const recordModeSchema = z.enum(['auto', 'off', 'replay-only']);
 
+// Pause mode schema
+export const pauseModeSchema = z.enum(['off', 'tool-calls', 'all']);
+
 // PlayingPack config schema
 export const playingPackConfigSchema = z.object({
   upstream: z.string().url().optional(),
@@ -103,8 +117,7 @@ export const playingPackConfigSchema = z.object({
   headless: z.boolean().optional(),
   port: z.number().int().min(1).max(65535).optional(),
   host: z.string().optional(),
-  pauseEnabled: z.boolean().optional(),
-  pauseOnToolCalls: z.boolean().optional(),
+  pause: pauseModeSchema.optional(),
 });
 
 // Type exports from schemas

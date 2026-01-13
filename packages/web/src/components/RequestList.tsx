@@ -25,7 +25,9 @@ export function RequestList() {
         <p className="text-sm">No requests yet</p>
         <p className="text-xs mt-1">
           Point your AI agent to{' '}
-          <code className="bg-pp-gray px-1 rounded">localhost:3000/v1</code>
+          <code className="bg-pp-gray px-1 rounded">
+            localhost:{window.location.port || '4747'}/v1
+          </code>
         </p>
       </div>
     );

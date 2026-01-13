@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { InterceptorSettings } from '@playingpack/shared';
+import type { InterceptorSettings, PauseMode } from '@playingpack/shared';
 
 interface InterceptorStore {
   settings: InterceptorSettings;
@@ -9,13 +9,12 @@ interface InterceptorStore {
   setSettings: (settings: InterceptorSettings) => void;
   updateSettings: (settings: Partial<InterceptorSettings>) => void;
   setConnected: (connected: boolean) => void;
-  togglePause: () => void;
+  setPauseMode: (mode: PauseMode) => void;
 }
 
 export const useInterceptorStore = create<InterceptorStore>((set) => ({
   settings: {
-    pauseEnabled: false,
-    pauseOnToolCalls: true,
+    pause: 'off',
   },
   connected: false,
 
@@ -33,12 +32,9 @@ export const useInterceptorStore = create<InterceptorStore>((set) => ({
     set({ connected });
   },
 
-  togglePause: () => {
+  setPauseMode: (mode) => {
     set((state) => ({
-      settings: {
-        ...state.settings,
-        pauseEnabled: !state.settings.pauseEnabled,
-      },
+      settings: { ...state.settings, pause: mode },
     }));
   },
 }));

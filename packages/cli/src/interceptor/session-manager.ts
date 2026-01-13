@@ -18,15 +18,17 @@ export class SessionManager {
   private sessions: Map<string, RequestSession> = new Map();
   private settings: InterceptorSettings;
   private listeners: Set<SessionCallback> = new Set();
-  private pendingResolvers: Map<string, {
-    resolve: (action: 'allow' | 'mock') => void;
-    mockContent?: string;
-  }> = new Map();
+  private pendingResolvers: Map<
+    string,
+    {
+      resolve: (action: 'allow' | 'mock') => void;
+      mockContent?: string;
+    }
+  > = new Map();
 
   constructor(initialSettings?: Partial<InterceptorSettings>) {
     this.settings = {
-      pauseEnabled: false,
-      pauseOnToolCalls: true,
+      pause: 'off',
       ...initialSettings,
     };
   }
@@ -34,12 +36,7 @@ export class SessionManager {
   /**
    * Create a new session for an incoming request
    */
-  createSession(
-    id: string,
-    method: string,
-    path: string,
-    body: unknown
-  ): RequestSession {
+  createSession(id: string, method: string, path: string, body: unknown): RequestSession {
     const session: RequestSession = {
       id,
       state: 'LOOKUP',
@@ -151,7 +148,7 @@ export class SessionManager {
    * Check if we should intercept this session
    */
   shouldIntercept(id: string): boolean {
-    if (!this.settings.pauseEnabled) {
+    if (this.settings.pause === 'off') {
       return false;
     }
 
@@ -160,12 +157,12 @@ export class SessionManager {
       return false;
     }
 
-    // If pauseOnToolCalls is true, only pause when tool calls are detected
-    if (this.settings.pauseOnToolCalls) {
+    // "tool-calls" mode: only pause when tool calls are detected
+    if (this.settings.pause === 'tool-calls') {
       return session.toolCalls.length > 0;
     }
 
-    // Otherwise, pause all requests
+    // "all" mode: pause all requests
     return true;
   }
 
@@ -196,11 +193,13 @@ export class SessionManager {
 
     // Wait for user action
     return new Promise((resolve) => {
-      this.pendingResolvers.set(id, { resolve: (action) => {
-        const resolver = this.pendingResolvers.get(id);
-        this.pendingResolvers.delete(id);
-        resolve({ action, mockContent: resolver?.mockContent });
-      }});
+      this.pendingResolvers.set(id, {
+        resolve: (action) => {
+          const resolver = this.pendingResolvers.get(id);
+          this.pendingResolvers.delete(id);
+          resolve({ action, mockContent: resolver?.mockContent });
+        },
+      });
     });
   }
 

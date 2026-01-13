@@ -14,8 +14,11 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@playingpack/shared": ["../shared/dist/index.d.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "../cli/src/trpc/router.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -1,5 +1,12 @@
+import type { PauseMode } from '@playingpack/shared';
 import { useInterceptorStore } from '../stores/interceptorStore';
 import { trpc } from '../lib/trpc';
+
+const PAUSE_MODES: { value: PauseMode; label: string; description: string }[] = [
+  { value: 'off', label: 'Off', description: 'No interception' },
+  { value: 'tool-calls', label: 'Tools', description: 'Pause on tool calls' },
+  { value: 'all', label: 'All', description: 'Pause all requests' },
+];
 
 export function InterceptorToggle() {
   const settings = useInterceptorStore((s) => s.settings);
@@ -12,14 +19,8 @@ export function InterceptorToggle() {
     },
   });
 
-  const handleToggle = () => {
-    const newSettings = { pauseEnabled: !settings.pauseEnabled };
-    updateMutation.mutate({ settings: newSettings });
-  };
-
-  const handleToolCallsToggle = () => {
-    const newSettings = { pauseOnToolCalls: !settings.pauseOnToolCalls };
-    updateMutation.mutate({ settings: newSettings });
+  const handleModeChange = (mode: PauseMode) => {
+    updateMutation.mutate({ settings: { pause: mode } });
   };
 
   return (
@@ -31,53 +32,31 @@ export function InterceptorToggle() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium text-gray-200">Pause Mode</div>
-          <div className="text-xs text-gray-500">
-            Intercept requests for inspection
-          </div>
+      <div className="mb-2">
+        <div className="text-sm font-medium text-gray-200">Pause Mode</div>
+        <div className="text-xs text-gray-500">
+          {PAUSE_MODES.find((m) => m.value === settings.pause)?.description}
         </div>
-        <button
-          onClick={handleToggle}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${settings.pauseEnabled ? 'bg-blue-600' : 'bg-gray-600'}
-          `}
-        >
-          <span
-            className={`
-              inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-              ${settings.pauseEnabled ? 'translate-x-6' : 'translate-x-1'}
-            `}
-          />
-        </button>
       </div>
 
-      {settings.pauseEnabled && (
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-pp-light">
-          <div>
-            <div className="text-sm text-gray-300">Tool Calls Only</div>
-            <div className="text-xs text-gray-500">
-              Only pause when tool calls detected
-            </div>
-          </div>
+      <div className="flex rounded-lg bg-pp-gray p-1">
+        {PAUSE_MODES.map((mode) => (
           <button
-            onClick={handleToolCallsToggle}
+            key={mode.value}
+            onClick={() => handleModeChange(mode.value)}
             className={`
-              relative inline-flex h-5 w-9 items-center rounded-full transition-colors
-              ${settings.pauseOnToolCalls ? 'bg-blue-600' : 'bg-gray-600'}
+              flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors
+              ${
+                settings.pause === mode.value
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200'
+              }
             `}
           >
-            <span
-              className={`
-                inline-block h-3 w-3 transform rounded-full bg-white transition-transform
-                ${settings.pauseOnToolCalls ? 'translate-x-5' : 'translate-x-1'}
-              `}
-            />
+            {mode.label}
           </button>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

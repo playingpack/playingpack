@@ -9,7 +9,7 @@ const getBaseUrl = () => {
     // In browser, use same origin
     return '';
   }
-  return 'http://localhost:3000';
+  return 'http://localhost:4747';
 };
 
 export const trpcClient = trpc.createClient({
