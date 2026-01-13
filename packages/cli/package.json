@@ -22,7 +22,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/playingpack/playingpack.git"
+    "url": "git+https://github.com/playingpack/playingpack.git"
   },
   "homepage": "https://github.com/playingpack/playingpack#readme",
   "bugs": {
