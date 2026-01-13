@@ -57,8 +57,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         setSession(event.session);
         break;
 
-      case 'intercept':
-        // Update session to show intercept state
+      case 'intercept': {
         const session = get().sessions.get(event.requestId);
         if (session) {
           setSession({
@@ -67,9 +66,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           });
         }
         break;
+      }
 
-      case 'request_complete':
-        // Update session with cached flag
+      case 'request_complete': {
         const completedSession = get().sessions.get(event.requestId);
         if (completedSession) {
           setSession({
@@ -78,6 +77,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           });
         }
         break;
+      }
     }
   },
 
@@ -88,8 +88,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   getSortedSessions: () => {
     const sessions = Array.from(get().sessions.values());
     // Sort by timestamp descending (newest first)
-    return sessions.sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    return sessions.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   },
 
