@@ -130,9 +130,11 @@ describe('generateNonStreamingResponse', () => {
     expect(response.id).toContain('chatcmpl-mock-');
     expect(response.object).toBe('chat.completion');
     expect(response.choices).toHaveLength(1);
-    expect(response.choices[0].message.role).toBe('assistant');
-    expect(response.choices[0].message.content).toBe('Hello world');
-    expect(response.choices[0].finish_reason).toBe('stop');
+
+    const choice = response.choices[0]!;
+    expect(choice.message.role).toBe('assistant');
+    expect(choice.message.content).toBe('Hello world');
+    expect(choice.finish_reason).toBe('stop');
   });
 
   it('should generate valid non-streaming tool call response', () => {
@@ -158,10 +160,11 @@ describe('generateNonStreamingResponse', () => {
       }>;
     };
 
-    expect(response.choices[0].message.content).toBeNull();
-    expect(response.choices[0].message.tool_calls).toHaveLength(1);
-    expect(response.choices[0].message.tool_calls?.[0].function.name).toBe('get_weather');
-    expect(response.choices[0].finish_reason).toBe('tool_calls');
+    const choice = response.choices[0]!;
+    expect(choice.message.content).toBeNull();
+    expect(choice.message.tool_calls).toHaveLength(1);
+    expect(choice.message.tool_calls?.[0]?.function.name).toBe('get_weather');
+    expect(choice.finish_reason).toBe('tool_calls');
   });
 
   it('should include usage object', () => {
