@@ -44,9 +44,6 @@ importers:
       '@fastify/websocket':
         specifier: ^10.0.1
         version: 10.0.1
-      '@playingpack/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@trpc/server':
         specifier: ^10.45.0
         version: 10.45.4
@@ -75,6 +72,9 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
+      '@playingpack/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.28
