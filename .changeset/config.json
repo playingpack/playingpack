@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@playingpack/web", "@playingpack/shared"]
+  "ignore": ["@playingpack/web"]
 }
