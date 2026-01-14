@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws';
-import type { WSEvent } from '@playingpack/shared';
-import { getSessionManager } from '../interceptor/session-manager.js';
+import type { WSEvent, WSMessage } from '@playingpack/shared';
+import { wsMessageSchema } from '@playingpack/shared';
+import { getSessionManager } from '../session/manager.js';
 
 /**
  * Connected WebSocket clients
@@ -52,54 +53,31 @@ export function handleConnection(socket: WebSocket): void {
  * Handle message from client
  */
 function handleClientMessage(socket: WebSocket, message: unknown): void {
-  if (typeof message !== 'object' || message === null) {
+  // Validate message
+  const result = wsMessageSchema.safeParse(message);
+  if (!result.success) {
+    // Handle ping separately (not in schema)
+    if (
+      typeof message === 'object' &&
+      message !== null &&
+      (message as Record<string, unknown>).type === 'ping'
+    ) {
+      sendToClient(socket, { type: 'request_update', session: null } as unknown as WSEvent);
+      return;
+    }
     return;
   }
 
-  const msg = message as Record<string, unknown>;
+  const msg = result.data as WSMessage;
   const sessionManager = getSessionManager();
 
   switch (msg.type) {
-    // Post-intercept actions (after LLM response)
-    case 'allow':
-      if (typeof msg.requestId === 'string') {
-        sessionManager.allowRequest(msg.requestId);
-      }
+    case 'point1_action':
+      sessionManager.resolvePoint1(msg.requestId, msg.action);
       break;
 
-    case 'mock':
-      if (typeof msg.requestId === 'string' && typeof msg.content === 'string') {
-        sessionManager.mockRequest(msg.requestId, msg.content);
-      }
-      break;
-
-    // Pre-intercept actions (before LLM call)
-    case 'pre_allow':
-      if (typeof msg.requestId === 'string') {
-        sessionManager.preInterceptAllow(msg.requestId);
-      }
-      break;
-
-    case 'pre_edit':
-      if (typeof msg.requestId === 'string' && typeof msg.editedBody === 'object') {
-        sessionManager.preInterceptEdit(msg.requestId, msg.editedBody as Record<string, unknown>);
-      }
-      break;
-
-    case 'pre_use_cache':
-      if (typeof msg.requestId === 'string') {
-        sessionManager.preInterceptUseCache(msg.requestId);
-      }
-      break;
-
-    case 'pre_mock':
-      if (typeof msg.requestId === 'string' && typeof msg.mockContent === 'string') {
-        sessionManager.preInterceptMock(msg.requestId, msg.mockContent);
-      }
-      break;
-
-    case 'ping':
-      sendToClient(socket, { type: 'pong' } as unknown as WSEvent);
+    case 'point2_action':
+      sessionManager.resolvePoint2(msg.requestId, msg.action);
       break;
   }
 }

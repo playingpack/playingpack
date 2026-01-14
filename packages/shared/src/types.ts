@@ -1,70 +1,94 @@
 /**
  * Core types for PlayingPack
+ *
+ * Simple model:
+ * - Cache: system remembers responses
+ * - Intervene: human can inspect/modify at two points in the request/response flow
  */
 
-// Request state machine states
-export type RequestState =
-  | 'LOOKUP' // Checking for cached tape
-  | 'PAUSED' // Request paused before LLM call, waiting for user approval
-  | 'CONNECT' // Opening upstream connection
-  | 'STREAMING' // Piping chunks through
-  | 'TOOL_CALL' // Tool call detected, waiting for user decision
-  | 'FLUSH' // Resuming with real data
-  | 'INJECT' // Sending mock data
-  | 'REPLAY' // Playing back cached tape
-  | 'COMPLETE' // Request finished
-  | 'ERROR'; // Request errored
+// =============================================================================
+// Configuration
+// =============================================================================
 
-// Tape chunk - represents a single SSE event with timing
-export interface TapeChunk {
-  /** The raw SSE data string */
-  c: string;
-  /** Delay in ms since previous chunk */
-  d: number;
+/** Cache mode - how the system handles cached responses */
+export type CacheMode = 'off' | 'read' | 'read-write';
+
+/** PlayingPack configuration */
+export interface PlayingPackConfig {
+  // Core settings
+  /** Cache mode: 'off' | 'read' | 'read-write' (default: 'read-write') */
+  cache: CacheMode;
+  /** Whether to pause for human intervention (default: false) */
+  intervene: boolean;
+
+  // Infrastructure settings
+  /** Upstream API URL (default: 'https://api.openai.com') */
+  upstream: string;
+  /** Port to listen on (default: 4747) */
+  port: number;
+  /** Host to bind to (default: '0.0.0.0') */
+  host: string;
+  /** Directory for cached responses (default: '.playingpack/cache') */
+  cachePath: string;
+  /** Directory for log files (default: '.playingpack/logs') */
+  logPath: string;
+  /** Run without opening browser (default: false) */
+  headless: boolean;
 }
 
-// Tape metadata
-export interface TapeMeta {
-  /** Unique tape ID */
-  id: string;
-  /** SHA-256 hash of normalized request */
-  hash: string;
-  /** ISO timestamp when recorded */
-  timestamp: string;
-  /** Model used (e.g., "gpt-4") */
-  model: string;
-  /** Endpoint path */
-  endpoint: string;
+/** User config input (partial, with defaults applied later) */
+export type PlayingPackUserConfig = Partial<PlayingPackConfig>;
+
+/**
+ * Helper function for creating type-safe configuration.
+ *
+ * @example
+ * ```ts
+ * // playingpack.config.ts
+ * import { defineConfig } from 'playingpack';
+ *
+ * export default defineConfig({
+ *   cache: process.env.CI ? 'read' : 'read-write',
+ *   headless: !!process.env.CI,
+ * });
+ * ```
+ */
+export function defineConfig(config: PlayingPackUserConfig): PlayingPackUserConfig {
+  return config;
 }
 
-// The Tape - a recorded request/response pair
-export interface Tape {
-  meta: TapeMeta;
-  request: {
-    /** The full request body */
-    body: unknown;
-  };
-  response: {
-    /** HTTP status code */
-    status: number;
-    /** Response chunks with timing */
-    chunks: TapeChunk[];
-  };
+/** Runtime settings (can be changed via UI) */
+export interface Settings {
+  cache: CacheMode;
+  intervene: boolean;
 }
 
-// Tool call detected in stream
+// =============================================================================
+// Request Session
+// =============================================================================
+
+/**
+ * Request lifecycle state (simplified to 4 states)
+ *
+ * Flow:
+ * - pending: waiting for human action at intervention point 1
+ * - processing: getting response (from LLM or cache)
+ * - reviewing: waiting for human action at intervention point 2
+ * - complete: done
+ */
+export type RequestState = 'pending' | 'processing' | 'reviewing' | 'complete';
+
+/** Tool call detected in response */
 export interface ToolCall {
-  /** Tool call index in the array */
-  index: number;
   /** Tool call ID from OpenAI */
   id: string;
   /** Function name */
   name: string;
-  /** Accumulated arguments JSON string */
+  /** Arguments JSON string */
   arguments: string;
 }
 
-// Active request session
+/** Active request session */
 export interface RequestSession {
   /** Unique request ID */
   id: string;
@@ -74,164 +98,130 @@ export interface RequestSession {
   timestamp: string;
   /** Completion timestamp */
   completedAt?: string;
-  /** HTTP method */
-  method: string;
-  /** Request path */
-  path: string;
-  /** Request body (prompt) - sanitized */
-  body: unknown;
-  /** Model being used */
-  model?: string;
-  /** Detected tool calls */
-  toolCalls: ToolCall[];
-  /** Accumulated response content */
-  responseContent: string;
-  /** HTTP status code */
-  statusCode?: number;
+
+  /** Request info */
+  request: {
+    model: string;
+    messages: unknown[];
+    stream: boolean;
+  };
+
+  /** Cache info */
+  cacheKey: string;
+  cacheHit: boolean;
+
+  /** Response info (populated after response received) */
+  response?: {
+    status: number;
+    content: string;
+    toolCalls: ToolCall[];
+  };
+
   /** Error message if any */
   error?: string;
-  /** Whether the response was served from cache */
-  cached?: boolean;
 }
 
-// WebSocket event: Intercept notification (after LLM response)
-export interface InterceptEvent {
-  type: 'intercept';
-  requestId: string;
-  toolCall: {
-    name: string;
-    arguments: string;
-  };
-  status: 'paused';
+// =============================================================================
+// Cached Response
+// =============================================================================
+
+/** A chunk of SSE data with timing */
+export interface CacheChunk {
+  /** The raw SSE data string */
+  data: string;
+  /** Delay in ms since previous chunk */
+  delay: number;
 }
 
-// WebSocket event: Pre-intercept notification (before LLM call)
-export interface PreInterceptEvent {
-  type: 'pre_intercept';
-  requestId: string;
+/** A cached response */
+export interface CachedResponse {
+  /** SHA-256 hash of normalized request (used as filename) */
+  hash: string;
+  /** ISO timestamp when cached */
+  timestamp: string;
+
+  /** The request that was made */
   request: {
     model: string;
     messages: unknown[];
   };
-  hasCachedResponse: boolean;
-  status: 'paused';
+
+  /** The response that was received */
+  response: {
+    status: number;
+    /** For non-streaming responses */
+    body?: unknown;
+    /** For streaming responses - chunks with timing */
+    chunks?: CacheChunk[];
+  };
 }
 
-// WebSocket event: Request update
+// =============================================================================
+// Human Actions (Intervention Points)
+// =============================================================================
+
+/**
+ * Point 1 Action - what to do when request arrives
+ *
+ * - llm: call the upstream LLM
+ * - cache: use cached response (if available)
+ * - mock: use provided mock response
+ */
+export type Point1Action =
+  | { action: 'llm' }
+  | { action: 'cache' }
+  | { action: 'mock'; content: string };
+
+/**
+ * Point 2 Action - what to do with the response
+ *
+ * - return: send response to agent as-is
+ * - modify: modify the response before sending
+ */
+export type Point2Action = { action: 'return' } | { action: 'modify'; content: string };
+
+// =============================================================================
+// WebSocket Events
+// =============================================================================
+
+/** WebSocket event: request state changed */
 export interface RequestUpdateEvent {
   type: 'request_update';
   session: RequestSession;
 }
 
-// WebSocket event: Request complete
-export interface RequestCompleteEvent {
-  type: 'request_complete';
+/** Union of all WebSocket events (server -> client) */
+export type WSEvent = RequestUpdateEvent;
+
+/** WebSocket message: point 1 action (client -> server) */
+export interface Point1ActionMessage {
+  type: 'point1_action';
   requestId: string;
-  statusCode: number;
-  cached: boolean;
+  action: Point1Action;
 }
 
-// Union of all WebSocket events
-export type WSEvent =
-  | InterceptEvent
-  | PreInterceptEvent
-  | RequestUpdateEvent
-  | RequestCompleteEvent;
-
-// Mock request payload from UI
-export interface MockRequest {
+/** WebSocket message: point 2 action (client -> server) */
+export interface Point2ActionMessage {
+  type: 'point2_action';
   requestId: string;
-  type: 'text' | 'error' | 'tool_result';
-  content: string;
+  action: Point2Action;
 }
 
-// Allow request payload from UI
-export interface AllowRequest {
-  requestId: string;
-}
+/** Union of all WebSocket messages (client -> server) */
+export type WSMessage = Point1ActionMessage | Point2ActionMessage;
 
-// Pre-intercept action types
-export type PreInterceptAction = 'allow' | 'edit' | 'use_cache' | 'mock';
+// =============================================================================
+// tRPC Types
+// =============================================================================
 
-// Pre-intercept result from session manager
-export interface PreInterceptResult {
-  action: PreInterceptAction;
-  editedBody?: Record<string, unknown>;
-  mockContent?: string;
-}
-
-// Interceptor settings
-export interface InterceptorSettings {
-  /** Pause mode: "off" | "tool-calls" | "all" (default: off) */
-  pause: PauseMode;
-}
-
-// Recording mode for VCR
-export type RecordMode = 'auto' | 'off' | 'replay-only';
-
-// Pause mode for interceptor
-export type PauseMode = 'off' | 'tool-calls' | 'all';
-
-// PlayingPack configuration
-export interface PlayingPackConfig {
-  /** Upstream API URL (default: https://api.openai.com) */
-  upstream: string;
-  /** Directory for tape storage (default: .playingpack/tapes) */
-  tapesDir: string;
-  /** Directory for log files (default: .playingpack/logs) */
-  logsDir: string;
-  /** Recording mode (default: auto) */
-  record: RecordMode;
-  /** Run without UI (default: false) */
-  headless: boolean;
-  /** Port to listen on (default: 4747) */
-  port: number;
-  /** Host to bind to (default: 0.0.0.0) */
-  host: string;
-  /** Pause mode: "off" | "tool-calls" | "all" (default: off) */
-  pause: PauseMode;
-}
-
-// Server configuration (legacy, kept for compatibility)
-export interface ServerConfig {
-  port: number;
-  host: string;
-  upstreamUrl: string;
-  tapesDir: string;
-}
-
-// User config input (partial, with defaults applied later)
-export type PlayingPackUserConfig = Partial<PlayingPackConfig>;
-
-/**
- * Helper function for creating type-safe configuration.
- * Provides autocomplete and validation for config files.
- *
- * @example
- * ```ts
- * // playingpack.config.ts
- * import { defineConfig } from 'playingpack';
- *
- * export default defineConfig({
- *   upstream: process.env.LLM_API_URL ?? 'https://api.openai.com',
- *   record: process.env.CI ? 'replay-only' : 'auto',
- *   headless: !!process.env.CI,
- * });
- * ```
- */
-export function defineConfig(config: PlayingPackUserConfig): PlayingPackUserConfig {
-  return config;
-}
-
-// TRPC router input/output types
 export interface GetSessionsOutput {
   sessions: RequestSession[];
 }
 
 export interface GetSettingsOutput {
-  settings: InterceptorSettings;
+  settings: Settings;
 }
 
 export interface UpdateSettingsInput {
-  settings: Partial<InterceptorSettings>;
+  settings: Partial<Settings>;
 }

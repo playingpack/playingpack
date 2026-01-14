@@ -1,29 +1,21 @@
 import { create } from 'zustand';
 import type { RequestSession, WSEvent } from '@playingpack/shared';
 
-// Extended session with pre-intercept info
-export interface ExtendedSession extends RequestSession {
-  preInterceptInfo?: {
-    hasCachedResponse: boolean;
-    model: string;
-  };
-}
-
 interface RequestStore {
-  sessions: Map<string, ExtendedSession>;
+  sessions: Map<string, RequestSession>;
   selectedId: string | null;
 
   // Actions
-  setSession: (session: ExtendedSession) => void;
+  setSession: (session: RequestSession) => void;
   removeSession: (id: string) => void;
   clearSessions: () => void;
   selectSession: (id: string | null) => void;
   handleWSEvent: (event: WSEvent) => void;
 
   // Getters
-  getSession: (id: string) => ExtendedSession | undefined;
-  getSortedSessions: () => ExtendedSession[];
-  getSelectedSession: () => ExtendedSession | undefined;
+  getSession: (id: string) => RequestSession | undefined;
+  getSortedSessions: () => RequestSession[];
+  getSelectedSession: () => RequestSession | undefined;
 }
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
@@ -62,45 +54,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
     switch (event.type) {
       case 'request_update':
-        setSession(event.session);
-        break;
-
-      case 'intercept': {
-        const session = get().sessions.get(event.requestId);
-        if (session) {
-          setSession({
-            ...session,
-            state: 'TOOL_CALL',
-          });
+        if (event.session) {
+          setSession(event.session);
         }
         break;
-      }
-
-      case 'pre_intercept': {
-        const session = get().sessions.get(event.requestId);
-        if (session) {
-          setSession({
-            ...session,
-            state: 'PAUSED',
-            preInterceptInfo: {
-              hasCachedResponse: event.hasCachedResponse,
-              model: event.request.model,
-            },
-          });
-        }
-        break;
-      }
-
-      case 'request_complete': {
-        const completedSession = get().sessions.get(event.requestId);
-        if (completedSession) {
-          setSession({
-            ...completedSession,
-            cached: event.cached,
-          });
-        }
-        break;
-      }
     }
   },
 

@@ -1,4 +1,4 @@
-import type { WSEvent } from '@playingpack/shared';
+import type { WSEvent, Point1Action, Point2Action } from '@playingpack/shared';
 
 type EventCallback = (event: WSEvent) => void;
 
@@ -83,47 +83,19 @@ class WebSocketManager {
   }
 
   /**
-   * Allow a paused request
+   * Send Point 1 action (before getting response)
+   * Actions: llm, cache, mock
    */
-  allowRequest(requestId: string): void {
-    this.send({ type: 'allow', requestId });
+  sendPoint1Action(requestId: string, action: Point1Action): void {
+    this.send({ type: 'point1_action', requestId, action });
   }
 
   /**
-   * Mock a paused request
+   * Send Point 2 action (after getting response)
+   * Actions: return, modify
    */
-  mockRequest(requestId: string, content: string): void {
-    this.send({ type: 'mock', requestId, content });
-  }
-
-  // Pre-intercept actions (before LLM call)
-
-  /**
-   * Allow a pre-intercepted request to proceed to LLM
-   */
-  preInterceptAllow(requestId: string): void {
-    this.send({ type: 'pre_allow', requestId });
-  }
-
-  /**
-   * Edit and send a pre-intercepted request
-   */
-  preInterceptEdit(requestId: string, editedBody: Record<string, unknown>): void {
-    this.send({ type: 'pre_edit', requestId, editedBody });
-  }
-
-  /**
-   * Use cached response for a pre-intercepted request
-   */
-  preInterceptUseCache(requestId: string): void {
-    this.send({ type: 'pre_use_cache', requestId });
-  }
-
-  /**
-   * Mock response for a pre-intercepted request
-   */
-  preInterceptMock(requestId: string, mockContent: string): void {
-    this.send({ type: 'pre_mock', requestId, mockContent });
+  sendPoint2Action(requestId: string, action: Point2Action): void {
+    this.send({ type: 'point2_action', requestId, action });
   }
 
   /**

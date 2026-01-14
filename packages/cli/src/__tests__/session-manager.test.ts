@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  SessionManager,
-  getSessionManager,
-  resetSessionManager,
-} from '../interceptor/session-manager.js';
+import { SessionManager, getSessionManager, resetSessionManager } from '../session/manager.js';
 
 describe('SessionManager', () => {
   let manager: SessionManager;
@@ -14,26 +10,37 @@ describe('SessionManager', () => {
   });
 
   describe('createSession', () => {
-    it('should create a new session', () => {
-      const session = manager.createSession('test-id', 'POST', '/v1/chat/completions', {
+    it('should create a new session with processing state (intervene off)', () => {
+      const session = manager.createSession('test-id', {
         model: 'gpt-4',
-        messages: [],
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
       });
 
       expect(session.id).toBe('test-id');
-      expect(session.method).toBe('POST');
-      expect(session.path).toBe('/v1/chat/completions');
-      expect(session.state).toBe('LOOKUP');
-      expect(session.model).toBe('gpt-4');
-      expect(session.toolCalls).toEqual([]);
-      expect(session.responseContent).toBe('');
+      expect(session.state).toBe('processing'); // Default: intervene is false
+      expect(session.request.model).toBe('gpt-4');
+      expect(session.request.stream).toBe(true);
+      expect(session.cacheHit).toBe(false);
+    });
+
+    it('should create a new session with pending state when intervene is on', () => {
+      manager.updateSettings({ intervene: true });
+      const session = manager.createSession('test-id', {
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: 'Hello' }],
+        stream: true,
+      });
+
+      expect(session.id).toBe('test-id');
+      expect(session.state).toBe('pending'); // Intervene is true
     });
 
     it('should emit request_update event', () => {
       const callback = vi.fn();
       manager.subscribe(callback);
 
-      manager.createSession('test-id', 'POST', '/v1/chat/completions', {});
+      manager.createSession('test-id', { model: 'gpt-4' });
 
       expect(callback).toHaveBeenCalledWith(expect.objectContaining({ type: 'request_update' }));
     });
@@ -41,7 +48,7 @@ describe('SessionManager', () => {
 
   describe('getSession', () => {
     it('should return session by id', () => {
-      manager.createSession('test-id', 'POST', '/path', {});
+      manager.createSession('test-id', { model: 'gpt-4' });
       const session = manager.getSession('test-id');
       expect(session?.id).toBe('test-id');
     });
@@ -54,154 +61,178 @@ describe('SessionManager', () => {
 
   describe('getAllSessions', () => {
     it('should return all sessions', () => {
-      manager.createSession('id-1', 'POST', '/path', {});
-      manager.createSession('id-2', 'POST', '/path', {});
+      manager.createSession('id-1', { model: 'gpt-4' });
+      manager.createSession('id-2', { model: 'gpt-4' });
 
       const sessions = manager.getAllSessions();
       expect(sessions).toHaveLength(2);
     });
   });
 
-  describe('updateState', () => {
-    it('should update session state', () => {
-      manager.createSession('test-id', 'POST', '/path', {});
-      manager.updateState('test-id', 'STREAMING');
+  describe('state transitions', () => {
+    it('should transition to processing state', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.setProcessing('test-id');
 
       const session = manager.getSession('test-id');
-      expect(session?.state).toBe('STREAMING');
+      expect(session?.state).toBe('processing');
+    });
+
+    it('should transition to reviewing state', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.setReviewing('test-id');
+
+      const session = manager.getSession('test-id');
+      expect(session?.state).toBe('reviewing');
+    });
+
+    it('should transition to complete state', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.complete('test-id');
+
+      const session = manager.getSession('test-id');
+      expect(session?.state).toBe('complete');
+    });
+
+    it('should mark session as errored (complete with error field)', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.error('test-id', 'Something went wrong');
+
+      const session = manager.getSession('test-id');
+      expect(session?.state).toBe('complete');
+      expect(session?.error).toBe('Something went wrong');
     });
   });
 
-  describe('addToolCall', () => {
-    it('should add tool call to session', () => {
-      manager.createSession('test-id', 'POST', '/path', {});
+  describe('cache management', () => {
+    it('should set cache hit status', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.setCacheHit('test-id', true);
+
+      const session = manager.getSession('test-id');
+      expect(session?.cacheHit).toBe(true);
+    });
+  });
+
+  describe('response content', () => {
+    it('should append content to response', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.appendContent('test-id', 'Hello');
+      manager.appendContent('test-id', ' World');
+
+      const session = manager.getSession('test-id');
+      expect(session?.response?.content).toBe('Hello World');
+    });
+
+    it('should add tool calls', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
       manager.addToolCall('test-id', {
-        index: 0,
         id: 'call_123',
         name: 'get_weather',
-        arguments: '{}',
+        arguments: '{"location": "SF"}',
       });
 
       const session = manager.getSession('test-id');
-      expect(session?.toolCalls).toHaveLength(1);
-      expect(session?.toolCalls[0]?.name).toBe('get_weather');
+      expect(session?.response?.toolCalls).toHaveLength(1);
+      expect(session?.response?.toolCalls?.[0]?.name).toBe('get_weather');
     });
   });
 
-  describe('complete', () => {
-    it('should mark session as complete', () => {
-      const callback = vi.fn();
-      manager.subscribe(callback);
+  describe('intervention settings', () => {
+    it('should return false for shouldIntervene when intervene is false', () => {
+      manager.updateSettings({ intervene: false });
+      expect(manager.shouldIntervene()).toBe(false);
+    });
 
-      manager.createSession('test-id', 'POST', '/path', {});
-      manager.complete('test-id', 200, false);
-
-      const session = manager.getSession('test-id');
-      expect(session?.state).toBe('COMPLETE');
-      expect(session?.statusCode).toBe(200);
-
-      expect(callback).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'request_complete',
-          requestId: 'test-id',
-          statusCode: 200,
-          cached: false,
-        })
-      );
+    it('should return true for shouldIntervene when intervene is true', () => {
+      manager.updateSettings({ intervene: true });
+      expect(manager.shouldIntervene()).toBe(true);
     });
   });
 
-  describe('error', () => {
-    it('should mark session as errored', () => {
-      manager.createSession('test-id', 'POST', '/path', {});
-      manager.error('test-id', 'Connection failed');
+  describe('Point 1 intervention', () => {
+    it('should wait for and resolve Point 1 action', async () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
 
-      const session = manager.getSession('test-id');
-      expect(session?.state).toBe('ERROR');
-      expect(session?.error).toBe('Connection failed');
-    });
-  });
+      const waitPromise = manager.waitForPoint1('test-id');
 
-  describe('shouldIntercept', () => {
-    it('should return false when pause is disabled', () => {
-      manager.createSession('test-id', 'POST', '/path', {});
-      expect(manager.shouldIntercept('test-id')).toBe(false);
-    });
-
-    it('should return true when pause is tool-calls and tool call detected', () => {
-      manager.updateSettings({ pause: 'tool-calls' });
-      manager.createSession('test-id', 'POST', '/path', {});
-      manager.addToolCall('test-id', {
-        index: 0,
-        id: 'call_123',
-        name: 'func',
-        arguments: '{}',
-      });
-
-      expect(manager.shouldIntercept('test-id')).toBe(true);
-    });
-
-    it('should return false when pause is tool-calls and no tool calls', () => {
-      manager.updateSettings({ pause: 'tool-calls' });
-      manager.createSession('test-id', 'POST', '/path', {});
-
-      expect(manager.shouldIntercept('test-id')).toBe(false);
-    });
-
-    it('should return true for all requests when pause is all', () => {
-      manager.updateSettings({ pause: 'all' });
-      manager.createSession('test-id', 'POST', '/path', {});
-
-      expect(manager.shouldIntercept('test-id')).toBe(true);
-    });
-  });
-
-  describe('intercept and allowRequest', () => {
-    it('should pause and resume with allow', async () => {
-      manager.updateSettings({ pause: 'all' });
-      manager.createSession('test-id', 'POST', '/path', {});
-
-      const interceptPromise = manager.intercept('test-id');
-
-      // Simulate user clicking allow
+      // Simulate user action
       setTimeout(() => {
-        manager.allowRequest('test-id');
+        manager.resolvePoint1('test-id', { action: 'llm' });
       }, 10);
 
-      const result = await interceptPromise;
-      expect(result.action).toBe('allow');
+      const result = await waitPromise;
+      expect(result.action).toBe('llm');
     });
-  });
 
-  describe('intercept and mockRequest', () => {
-    it('should pause and resume with mock', async () => {
-      manager.updateSettings({ pause: 'all' });
-      manager.createSession('test-id', 'POST', '/path', {});
+    it('should handle cache action', async () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
 
-      const interceptPromise = manager.intercept('test-id');
+      const waitPromise = manager.waitForPoint1('test-id');
 
-      // Simulate user clicking mock
       setTimeout(() => {
-        manager.mockRequest('test-id', 'Mocked content');
+        manager.resolvePoint1('test-id', { action: 'cache' });
       }, 10);
 
-      const result = await interceptPromise;
+      const result = await waitPromise;
+      expect(result.action).toBe('cache');
+    });
+
+    it('should handle mock action with content', async () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+
+      const waitPromise = manager.waitForPoint1('test-id');
+
+      setTimeout(() => {
+        manager.resolvePoint1('test-id', { action: 'mock', content: 'Mocked!' });
+      }, 10);
+
+      const result = await waitPromise;
       expect(result.action).toBe('mock');
-      expect(result.mockContent).toBe('Mocked content');
+      expect((result as { action: 'mock'; content: string }).content).toBe('Mocked!');
+    });
+  });
+
+  describe('Point 2 intervention', () => {
+    it('should wait for and resolve Point 2 action', async () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+
+      const waitPromise = manager.waitForPoint2('test-id');
+
+      setTimeout(() => {
+        manager.resolvePoint2('test-id', { action: 'return' });
+      }, 10);
+
+      const result = await waitPromise;
+      expect(result.action).toBe('return');
+    });
+
+    it('should handle modify action', async () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+
+      const waitPromise = manager.waitForPoint2('test-id');
+
+      setTimeout(() => {
+        manager.resolvePoint2('test-id', { action: 'modify', content: 'Modified!' });
+      }, 10);
+
+      const result = await waitPromise;
+      expect(result.action).toBe('modify');
+      expect((result as { action: 'modify'; content: string }).content).toBe('Modified!');
     });
   });
 
   describe('settings', () => {
     it('should get and update settings', () => {
-      expect(manager.getSettings()).toEqual({
-        pause: 'off',
-      });
+      const defaultSettings = manager.getSettings();
+      expect(defaultSettings.cache).toBe('read-write');
+      expect(defaultSettings.intervene).toBe(false);
 
-      manager.updateSettings({ pause: 'tool-calls' });
+      manager.updateSettings({ cache: 'read', intervene: true });
 
-      expect(manager.getSettings()).toEqual({
-        pause: 'tool-calls',
-      });
+      const newSettings = manager.getSettings();
+      expect(newSettings.cache).toBe('read');
+      expect(newSettings.intervene).toBe(true);
     });
   });
 
@@ -210,13 +241,13 @@ describe('SessionManager', () => {
       const callback = vi.fn();
       const unsubscribe = manager.subscribe(callback);
 
-      manager.createSession('test-id', 'POST', '/path', {});
+      manager.createSession('test-id', { model: 'gpt-4' });
       expect(callback).toHaveBeenCalled();
 
       callback.mockClear();
       unsubscribe();
 
-      manager.createSession('test-id-2', 'POST', '/path', {});
+      manager.createSession('test-id-2', { model: 'gpt-4' });
       expect(callback).not.toHaveBeenCalled();
     });
   });
@@ -225,8 +256,8 @@ describe('SessionManager', () => {
     it('should remove old completed sessions', () => {
       // Create 110 sessions
       for (let i = 0; i < 110; i++) {
-        manager.createSession(`id-${i}`, 'POST', '/path', {});
-        manager.complete(`id-${i}`, 200, false);
+        manager.createSession(`id-${i}`, { model: 'gpt-4' });
+        manager.complete(`id-${i}`);
       }
 
       manager.cleanup();

@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { getSessionManager, type SessionManager } from '../interceptor/session-manager.js';
+import { getSessionManager, type SessionManager } from '../session/manager.js';
 
 /**
  * TRPC Context

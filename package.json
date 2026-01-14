@@ -11,7 +11,7 @@
     "build:web": "pnpm --filter @playingpack/web build",
     "build:cli": "pnpm --filter playingpack build",
     "build:all": "pnpm run clean && pnpm run build:shared && pnpm run build:web && pnpm run embed && pnpm run build:cli",
-    "embed": "cp -r packages/web/dist packages/cli/public",
+    "embed": "rm -rf packages/cli/public && cp -r packages/web/dist packages/cli/public",
     "clean": "rm -rf packages/cli/public packages/cli/dist packages/web/dist packages/shared/dist",
     "test": "pnpm --filter playingpack test",
     "start": "pnpm --filter playingpack start",

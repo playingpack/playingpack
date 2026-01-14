@@ -1,10 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { RecordMode } from '@playingpack/shared';
-import { getSessionManager } from '../interceptor/session-manager.js';
+import type { CacheMode } from '@playingpack/shared';
+import { getSessionManager } from '../session/manager.js';
 import { createSSEParser } from './sse-parser.js';
 import { sendUpstream, streamToGenerator, redactApiKey } from './upstream.js';
-import { TapeRecorder } from '../tape/recorder.js';
-import { tapeExists, createPlayer } from '../tape/player.js';
+import { CacheRecorder, cacheExists, createPlayer } from '../cache/index.js';
 import {
   generateMockTextStream,
   generateMockToolCallStream,
@@ -16,24 +15,25 @@ import { logger } from '../logger.js';
 
 export interface ProxyConfig {
   upstream: string;
-  tapesDir: string;
-  record: RecordMode;
+  cachePath: string;
+  cache: CacheMode;
 }
 
 // Module-level config (set via registerProxyRoutes)
 let proxyConfig: ProxyConfig = {
   upstream: 'https://api.openai.com',
-  tapesDir: '.playingpack/tapes',
-  record: 'auto',
+  cachePath: '.playingpack/cache',
+  cache: 'read-write',
 };
 
 /**
  * Register proxy routes
  */
-export function registerProxyRoutes(server: FastifyInstance, config?: ProxyConfig): void {
+export function registerProxyRoutes(server: FastifyInstance, config?: Partial<ProxyConfig>): void {
   if (config) {
-    proxyConfig = config;
+    proxyConfig = { ...proxyConfig, ...config };
   }
+
   // OpenAI Chat Completions endpoint
   server.post('/v1/chat/completions', async (request, reply) => {
     await handleChatCompletions(request, reply);
@@ -52,6 +52,13 @@ export function registerProxyRoutes(server: FastifyInstance, config?: ProxyConfi
 
 /**
  * Handle chat completions request
+ *
+ * Flow:
+ * 1. Request arrives
+ * 2. [Intervention Point 1] - if intervene enabled, wait for human action
+ * 3. Get response (from cache or LLM based on action/settings)
+ * 4. [Intervention Point 2] - if intervene enabled, wait for human action
+ * 5. Return response to agent
  */
 async function handleChatCompletions(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const sessionManager = getSessionManager();
@@ -61,7 +68,7 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   // Extract stream parameter (default true per OpenAI spec)
   const clientStream = body.stream !== false;
 
-  // Log request (redact API key)
+  // Log request
   const authHeader = request.headers.authorization || '';
   console.log(`[${requestId.slice(0, 8)}] POST /v1/chat/completions`);
   console.log(`  Model: ${body.model || 'unknown'}`);
@@ -76,135 +83,223 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   });
 
   // Create session
-  sessionManager.createSession(requestId, 'POST', '/v1/chat/completions', body);
+  sessionManager.createSession(requestId, body);
 
-  // State 0: LOOKUP - Check for cached tape
-  sessionManager.updateState(requestId, 'LOOKUP');
+  // Check cache status
+  const shouldReadCache = proxyConfig.cache !== 'off';
+  const shouldWriteCache = proxyConfig.cache === 'read-write';
+  const cacheOnly = proxyConfig.cache === 'read';
 
-  // Check record mode
-  const shouldCheckTape = proxyConfig.record !== 'off';
-  const shouldRecord = proxyConfig.record === 'auto';
-  const replayOnly = proxyConfig.record === 'replay-only';
+  const hasCache = shouldReadCache && (await cacheExists(body, proxyConfig.cachePath));
+  sessionManager.setCacheHit(requestId, hasCache);
 
-  const hasTape = shouldCheckTape && (await tapeExists(body, proxyConfig.tapesDir));
+  // =========================================================================
+  // INTERVENTION POINT 1: Request arrived
+  // =========================================================================
+  let responseSource: 'llm' | 'cache' | 'mock' = hasCache ? 'cache' : 'llm';
+  let mockContent: string | undefined;
 
-  // Check if we should pre-intercept (pause before LLM call)
-  if (sessionManager.shouldPreIntercept(requestId)) {
-    console.log(
-      `  [PRE-INTERCEPT] Pausing before LLM call (cache ${hasTape ? 'available' : 'not available'})`
-    );
-    logger.info('Pre-intercept', { requestId, model: body.model, hasTape });
+  if (sessionManager.shouldIntervene()) {
+    console.log(`  [POINT 1] Waiting for human action (cache: ${hasCache ? 'yes' : 'no'})`);
 
-    const preResult = await sessionManager.preIntercept(requestId, hasTape);
-    console.log(`  [PRE-ACTION] ${preResult.action}`);
+    const action = await sessionManager.waitForPoint1(requestId);
 
-    switch (preResult.action) {
-      case 'use_cache':
-        if (hasTape) {
-          console.log(`  [CACHE] Using cached response`);
-          await replayFromTape(request, reply, requestId, body, clientStream);
+    switch (action.action) {
+      case 'cache':
+        responseSource = 'cache';
+        console.log(`  [ACTION] Use cache`);
+        break;
+      case 'llm':
+        responseSource = 'llm';
+        console.log(`  [ACTION] Call LLM`);
+        break;
+      case 'mock':
+        responseSource = 'mock';
+        mockContent = action.content;
+        console.log(`  [ACTION] Mock response`);
+        break;
+    }
+  } else {
+    // Auto mode: use cache if available, otherwise LLM
+    if (hasCache) {
+      console.log(`  [AUTO] Using cached response`);
+      responseSource = 'cache';
+    } else {
+      console.log(`  [AUTO] Calling LLM`);
+      responseSource = 'llm';
+    }
+  }
+
+  // =========================================================================
+  // GET RESPONSE (buffered - not sent to client yet)
+  // =========================================================================
+  try {
+    let responseData:
+      | { content: string; status: number; cached?: boolean; mocked?: boolean }
+      | undefined;
+
+    switch (responseSource) {
+      case 'cache': {
+        if (!hasCache) {
+          throw new Error('Cache requested but no cached response available');
+        }
+        const cacheData = await getFromCache(request, reply, requestId, body, clientStream);
+        responseData = { ...cacheData, cached: true };
+        break;
+      }
+
+      case 'llm':
+        if (cacheOnly) {
+          // In read-only cache mode, fail if no cache
+          console.log(`  [ERROR] Cache-only mode but no cache available`);
+          sessionManager.error(requestId, 'No cached response (cache: read mode)');
+          reply.code(404).send({
+            error: {
+              message: 'No cached response found (cache mode: read)',
+              type: 'cache_not_found',
+            },
+          });
           return;
         }
-        // Fall through to allow if no cache (shouldn't happen, UI should disable button)
-        console.log(`  [WARN] Cache requested but no tape available, proceeding to upstream`);
+        responseData = await getFromLLM(
+          request,
+          reply,
+          requestId,
+          body,
+          clientStream,
+          shouldWriteCache
+        );
         break;
 
       case 'mock':
-        console.log(`  [MOCK] Sending mock response`);
-        await sendMockResponse(reply, requestId, preResult.mockContent || '', clientStream);
-        return;
-
-      case 'edit':
-        // Use the edited body for the request
-        if (preResult.editedBody) {
-          Object.assign(body, preResult.editedBody);
-          console.log(`  [EDIT] Request body modified`);
-        }
-        break;
-
-      case 'allow':
-        // Continue with original body
+        responseData = await generateMockResponseData(
+          reply,
+          requestId,
+          mockContent || '',
+          clientStream
+        );
         break;
     }
-  } else if (hasTape) {
-    // No pre-intercept enabled, automatic replay from cache
-    console.log(`  [CACHE HIT] Replaying from tape`);
-    logger.info('Cache hit', { requestId, model: body.model });
-    await replayFromTape(request, reply, requestId, body, clientStream);
-    return;
-  }
 
-  // In replay-only mode, fail if no tape exists
-  if (replayOnly && !hasTape) {
-    console.log(`  [REPLAY-ONLY] No tape found, rejecting request`);
-    sessionManager.error(requestId, 'No tape found (replay-only mode)');
-    reply.code(404).send({
-      error: {
-        message: 'No recorded tape found for this request (replay-only mode)',
-        type: 'tape_not_found',
-      },
-    });
-    return;
-  }
+    // =========================================================================
+    // INTERVENTION POINT 2: Response received (wait before sending to client)
+    // =========================================================================
+    if (sessionManager.shouldIntervene() && responseData) {
+      console.log(`  [POINT 2] Waiting for human action`);
 
-  console.log(`  [CACHE MISS] Forwarding to upstream`);
-  logger.info('Cache miss', { requestId, model: body.model });
+      const action = await sessionManager.waitForPoint2(requestId);
 
-  // State 1: CONNECT - Connect to upstream
-  sessionManager.updateState(requestId, 'CONNECT');
-
-  try {
-    const response = await sendUpstream({
-      method: 'POST',
-      path: '/v1/chat/completions',
-      headers: request.headers,
-      body,
-      upstreamUrl: proxyConfig.upstream,
-    });
-
-    if (!response.ok || !response.body) {
-      // Handle error response
-      sessionManager.error(requestId, `Upstream error: ${response.status}`);
-      reply
-        .code(response.status)
-        .header('content-type', 'application/json')
-        .send(await streamToString(response.body));
-      return;
+      switch (action.action) {
+        case 'return':
+          console.log(`  [ACTION] Return as-is`);
+          break;
+        case 'modify':
+          console.log(`  [ACTION] Modify response`);
+          if (action.content) {
+            // Replace response with modified content
+            const modifiedData = await generateMockResponseData(
+              reply,
+              requestId,
+              action.content,
+              clientStream
+            );
+            responseData = modifiedData;
+          }
+          break;
+      }
     }
 
-    // Route to appropriate handler based on streaming mode
-    if (clientStream) {
-      // State 2: STREAMING - Stream response
-      await streamResponse(request, reply, requestId, response, body, shouldRecord);
-    } else {
-      // Handle non-streaming response
-      await handleNonStreamingResponse(request, reply, requestId, response, body, shouldRecord);
+    // Send the buffered response to client
+    if (responseData) {
+      sendBufferedResponse(reply, responseData, clientStream);
     }
+
+    // Complete the session
+    sessionManager.complete(requestId);
+    logger.info('Request completed', { requestId, source: responseSource });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`  [ERROR] ${message}`);
     logger.error('Request failed', { requestId, error: message });
     sessionManager.error(requestId, message);
-    reply.code(500).send({ error: { message, type: 'proxy_error' } });
+
+    if (!reply.sent) {
+      reply.code(500).send({ error: { message, type: 'proxy_error' } });
+    }
   }
 }
 
 /**
- * Stream response from upstream
+ * Get response from cache (buffered - does not send to client)
  */
-async function streamResponse(
+async function getFromCache(
   _request: FastifyRequest,
-  reply: FastifyReply,
+  _reply: FastifyReply,
   requestId: string,
-  response: { status: number; headers: Headers; body: ReadableStream<Uint8Array> | null },
   requestBody: unknown,
-  shouldRecord: boolean
-): Promise<void> {
+  _clientStream: boolean
+): Promise<{ content: string; status: number }> {
   const sessionManager = getSessionManager();
-  const recorder = shouldRecord ? new TapeRecorder(proxyConfig.tapesDir) : null;
-  recorder?.start(requestBody);
 
-  sessionManager.updateState(requestId, 'STREAMING');
+  const player = await createPlayer(requestBody, proxyConfig.cachePath);
+  if (!player) {
+    throw new Error('Failed to load cached response');
+  }
+
+  // SSE parser for extracting content and tool calls
+  const parser = createSSEParser({
+    onToolCall: (toolCall) => {
+      sessionManager.addToolCall(requestId, toolCall);
+      console.log(`  [TOOL CALL] ${toolCall.name}`);
+    },
+    onContent: (content) => {
+      sessionManager.appendContent(requestId, content);
+    },
+  });
+
+  // Buffer the response (don't send yet - wait for intervention point 2)
+  let fullContent = '';
+  for await (const chunk of player.replay()) {
+    parser.feed(chunk);
+    fullContent += chunk;
+  }
+
+  return { content: fullContent, status: player.getStatus(), cached: true } as {
+    content: string;
+    status: number;
+  };
+}
+
+/**
+ * Get response from LLM (buffered - does not send to client)
+ */
+async function getFromLLM(
+  request: FastifyRequest,
+  _reply: FastifyReply,
+  requestId: string,
+  requestBody: unknown,
+  _clientStream: boolean,
+  shouldWriteCache: boolean
+): Promise<{ content: string; status: number }> {
+  const sessionManager = getSessionManager();
+  const body = requestBody as Record<string, unknown>;
+
+  const response = await sendUpstream({
+    method: 'POST',
+    path: '/v1/chat/completions',
+    headers: request.headers,
+    body,
+    upstreamUrl: proxyConfig.upstream,
+  });
+
+  if (!response.ok || !response.body) {
+    const errorBody = response.body ? await streamToString(response.body) : '';
+    return { content: errorBody, status: response.status };
+  }
+
+  // Set up recorder if we should cache
+  const recorder = shouldWriteCache ? new CacheRecorder(proxyConfig.cachePath) : null;
+  recorder?.start(requestBody);
 
   // SSE parser for detecting tool calls
   const parser = createSSEParser({
@@ -213,331 +308,62 @@ async function streamResponse(
       console.log(`  [TOOL CALL] ${toolCall.name}`);
     },
     onContent: (content) => {
-      sessionManager.updateContent(requestId, content);
+      sessionManager.appendContent(requestId, content);
     },
   });
 
-  if (!response.body) {
-    reply.raw.end();
-    return;
-  }
-
-  // Buffer the entire response first
-  const buffer: string[] = [];
+  // Buffer the full response (don't send yet - wait for intervention point 2)
+  let fullContent = '';
   const stream = streamToGenerator(response.body);
 
   for await (const chunk of stream) {
-    // Parse the chunk for tool calls
     parser.feed(chunk);
-
-    // Record for tape
     recorder?.recordChunk(chunk);
-
-    // Buffer all chunks
-    buffer.push(chunk);
+    fullContent += chunk;
   }
 
-  // Store assembled message for display
-  const assembledMessage = parser.getAssembledMessage();
-  sessionManager.setRawResponse(requestId, JSON.stringify(assembledMessage, null, 2));
-
-  // Save tape (do this before intercept so we have complete response recorded)
+  // Save to cache
   if (recorder) {
     try {
-      const tapePath = await recorder.save(response.status);
-      console.log(`  [TAPE] Saved to ${tapePath}`);
+      const cachePath = await recorder.save(response.status);
+      console.log(`  [CACHE] Saved to ${cachePath}`);
     } catch (error) {
-      console.error(`  [TAPE ERROR] Failed to save tape:`, error);
+      console.error(`  [CACHE ERROR] Failed to save:`, error);
     }
   }
 
-  // After stream completes, check if we should intercept
-  if (sessionManager.shouldIntercept(requestId)) {
-    console.log(`  [INTERCEPT] Pausing for user action`);
-
-    // Wait for user action
-    const interceptResult = await sessionManager.intercept(requestId);
-
-    console.log(`  [ACTION] ${interceptResult.action}`);
-
-    if (interceptResult.action === 'mock') {
-      // State 5: INJECT - Send mock response instead
-      await sendMockResponse(reply, requestId, interceptResult.mockContent || '', true);
-      return;
-    }
-  }
-
-  // Set up SSE headers and send buffered response
-  reply
-    .code(response.status)
-    .header('content-type', 'text/event-stream')
-    .header('cache-control', 'no-cache')
-    .header('connection', 'keep-alive');
-
-  // Flush all buffered chunks to client
-  for (const chunk of buffer) {
-    reply.raw.write(chunk);
-  }
-
-  // Complete session
-  sessionManager.complete(requestId, response.status, false);
-  logger.info('Request completed', { requestId, status: response.status, cached: false });
-
-  reply.raw.end();
+  return { content: fullContent, status: response.status };
 }
 
 /**
- * Handle non-streaming response from upstream
+ * Generate mock response (buffered - does not send to client)
  */
-async function handleNonStreamingResponse(
-  _request: FastifyRequest,
-  reply: FastifyReply,
-  requestId: string,
-  response: { status: number; headers: Headers; body: ReadableStream<Uint8Array> | null },
-  requestBody: unknown,
-  shouldRecord: boolean
-): Promise<void> {
-  const sessionManager = getSessionManager();
-  const recorder = shouldRecord ? new TapeRecorder(proxyConfig.tapesDir) : null;
-  recorder?.start(requestBody);
-
-  sessionManager.updateState(requestId, 'STREAMING');
-
-  if (!response.body) {
-    reply.code(response.status).header('content-type', 'application/json').send('');
-    return;
-  }
-
-  // Read the entire JSON response
-  const jsonResponse = await streamToString(response.body);
-
-  // Record for tape (as raw JSON)
-  recorder?.recordChunk(jsonResponse);
-
-  // Parse response to extract content and tool calls for session manager
-  try {
-    const parsed = JSON.parse(jsonResponse) as {
-      choices?: Array<{
-        message?: {
-          content?: string | null;
-          tool_calls?: Array<{
-            id: string;
-            type: string;
-            function: { name: string; arguments: string };
-          }>;
-        };
-        finish_reason?: string;
-      }>;
-    };
-
-    if (parsed.choices?.[0]?.message) {
-      const message = parsed.choices[0].message;
-      if (message.content) {
-        sessionManager.updateContent(requestId, message.content);
-      }
-      if (message.tool_calls) {
-        for (const tc of message.tool_calls) {
-          sessionManager.addToolCall(requestId, {
-            index: 0,
-            id: tc.id,
-            name: tc.function.name,
-            arguments: tc.function.arguments,
-          });
-          console.log(`  [TOOL CALL] ${tc.function.name}`);
-        }
-      }
-    }
-
-    sessionManager.setRawResponse(requestId, JSON.stringify(parsed, null, 2));
-  } catch {
-    // If parsing fails, still store raw response
-    sessionManager.setRawResponse(requestId, jsonResponse);
-  }
-
-  // Save tape
-  if (recorder) {
-    try {
-      const tapePath = await recorder.save(response.status);
-      console.log(`  [TAPE] Saved to ${tapePath}`);
-    } catch (error) {
-      console.error(`  [TAPE ERROR] Failed to save tape:`, error);
-    }
-  }
-
-  // Check if we should intercept
-  if (sessionManager.shouldIntercept(requestId)) {
-    console.log(`  [INTERCEPT] Pausing for user action`);
-
-    const interceptResult = await sessionManager.intercept(requestId);
-    console.log(`  [ACTION] ${interceptResult.action}`);
-
-    if (interceptResult.action === 'mock') {
-      await sendMockResponse(reply, requestId, interceptResult.mockContent || '', false);
-      return;
-    }
-  }
-
-  // Send JSON response
-  reply.code(response.status).header('content-type', 'application/json').send(jsonResponse);
-
-  sessionManager.complete(requestId, response.status, false);
-  logger.info('Request completed', { requestId, status: response.status, cached: false });
-}
-
-/**
- * Replay response from tape
- */
-async function replayFromTape(
-  _request: FastifyRequest,
-  reply: FastifyReply,
-  requestId: string,
-  requestBody: unknown,
-  clientStream: boolean
-): Promise<void> {
-  const sessionManager = getSessionManager();
-  sessionManager.updateState(requestId, 'REPLAY');
-
-  const player = await createPlayer(requestBody, proxyConfig.tapesDir);
-
-  if (!player) {
-    sessionManager.error(requestId, 'Failed to load tape');
-    reply.code(500).send({ error: { message: 'Tape not found', type: 'proxy_error' } });
-    return;
-  }
-
-  if (clientStream) {
-    // Streaming replay - SSE format
-    reply
-      .code(player.getStatus())
-      .header('content-type', 'text/event-stream')
-      .header('cache-control', 'no-cache')
-      .header('connection', 'keep-alive')
-      .header('x-playingpack-cached', 'true');
-
-    // SSE parser for extracting content and tool calls
-    const parser = createSSEParser({
-      onToolCall: (toolCall) => {
-        sessionManager.addToolCall(requestId, toolCall);
-        console.log(`  [TOOL CALL] ${toolCall.name}`);
-      },
-      onContent: (content) => {
-        sessionManager.updateContent(requestId, content);
-      },
-    });
-
-    // Replay with timing
-    for await (const chunk of player.replay()) {
-      parser.feed(chunk);
-      reply.raw.write(chunk);
-    }
-
-    // Store assembled message for display
-    const assembledMessage = parser.getAssembledMessage();
-    sessionManager.setRawResponse(requestId, JSON.stringify(assembledMessage, null, 2));
-
-    sessionManager.complete(requestId, player.getStatus(), true);
-    logger.info('Request completed', { requestId, status: player.getStatus(), cached: true });
-    reply.raw.end();
-  } else {
-    // Non-streaming replay - JSON format
-    // Collect all chunks into single response (tape stores raw JSON for non-streaming)
-    let jsonResponse = '';
-    for await (const chunk of player.replay()) {
-      jsonResponse += chunk;
-    }
-
-    // Parse for session manager
-    try {
-      const parsed = JSON.parse(jsonResponse) as {
-        choices?: Array<{
-          message?: {
-            content?: string | null;
-            tool_calls?: Array<{
-              id: string;
-              type: string;
-              function: { name: string; arguments: string };
-            }>;
-          };
-        }>;
-      };
-
-      if (parsed.choices?.[0]?.message) {
-        const message = parsed.choices[0].message;
-        if (message.content) {
-          sessionManager.updateContent(requestId, message.content);
-        }
-        if (message.tool_calls) {
-          for (const tc of message.tool_calls) {
-            sessionManager.addToolCall(requestId, {
-              index: 0,
-              id: tc.id,
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            });
-            console.log(`  [TOOL CALL] ${tc.function.name}`);
-          }
-        }
-      }
-      sessionManager.setRawResponse(requestId, JSON.stringify(parsed, null, 2));
-    } catch {
-      sessionManager.setRawResponse(requestId, jsonResponse);
-    }
-
-    reply
-      .code(player.getStatus())
-      .header('content-type', 'application/json')
-      .header('x-playingpack-cached', 'true')
-      .send(jsonResponse);
-
-    sessionManager.complete(requestId, player.getStatus(), true);
-    logger.info('Request completed', { requestId, status: player.getStatus(), cached: true });
-  }
-}
-
-/**
- * Send mock response
- */
-async function sendMockResponse(
-  reply: FastifyReply,
-  requestId: string,
+async function generateMockResponseData(
+  _reply: FastifyReply,
+  _requestId: string,
   mockContent: string,
   clientStream: boolean = true
-): Promise<void> {
-  const sessionManager = getSessionManager();
+): Promise<{ content: string; status: number; mocked: boolean }> {
   const parsed = parseMockContent(mockContent);
 
   if (parsed.type === 'error') {
-    // Send error response (same format for both streaming and non-streaming)
-    reply
-      .code(400)
-      .header('content-type', 'application/json')
-      .send(generateErrorResponse(parsed.content));
-    sessionManager.complete(requestId, 400, false);
-    return;
+    const errorResponse = generateErrorResponse(parsed.content);
+    return { content: errorResponse, status: 400, mocked: true };
   }
 
   if (clientStream) {
-    // Send streamed SSE response
-    reply
-      .code(200)
-      .header('content-type', 'text/event-stream')
-      .header('cache-control', 'no-cache')
-      .header('connection', 'keep-alive')
-      .header('x-playingpack-mocked', 'true');
-
     const generator =
       parsed.type === 'tool_call'
         ? generateMockToolCallStream(parsed.functionName || 'mock_function', parsed.content)
         : generateMockTextStream(parsed.content);
 
+    let fullContent = '';
     for await (const chunk of generator) {
-      reply.raw.write(chunk);
+      fullContent += chunk;
     }
 
-    sessionManager.complete(requestId, 200, false);
-    reply.raw.end();
+    return { content: fullContent, status: 200, mocked: true };
   } else {
-    // Send non-streaming JSON response
     const toolCalls =
       parsed.type === 'tool_call'
         ? [
@@ -554,14 +380,52 @@ async function sendMockResponse(
 
     const content = parsed.type === 'text' ? parsed.content : null;
     const response = generateNonStreamingResponse(content, toolCalls);
+    const jsonResponse = JSON.stringify(response);
 
+    return { content: jsonResponse, status: 200, mocked: true };
+  }
+}
+
+/**
+ * Send buffered response to client
+ */
+function sendBufferedResponse(
+  reply: FastifyReply,
+  responseData: { content: string; status: number; cached?: boolean; mocked?: boolean },
+  clientStream: boolean
+): void {
+  const headers: Record<string, string> = {};
+
+  if (responseData.cached) {
+    headers['x-playingpack-cached'] = 'true';
+  }
+  if (responseData.mocked) {
+    headers['x-playingpack-mocked'] = 'true';
+  }
+
+  if (clientStream && responseData.content.includes('data: ')) {
+    // SSE streaming response
     reply
-      .code(200)
-      .header('content-type', 'application/json')
-      .header('x-playingpack-mocked', 'true')
-      .send(JSON.stringify(response));
+      .code(responseData.status)
+      .header('content-type', 'text/event-stream')
+      .header('cache-control', 'no-cache')
+      .header('connection', 'keep-alive');
 
-    sessionManager.complete(requestId, 200, false);
+    for (const [key, value] of Object.entries(headers)) {
+      reply.header(key, value);
+    }
+
+    reply.raw.write(responseData.content);
+    reply.raw.end();
+  } else {
+    // JSON response
+    reply.code(responseData.status).header('content-type', 'application/json');
+
+    for (const [key, value] of Object.entries(headers)) {
+      reply.header(key, value);
+    }
+
+    reply.send(responseData.content);
   }
 }
 
@@ -580,7 +444,6 @@ async function handlePassthrough(request: FastifyRequest, reply: FastifyReply): 
 
     reply.code(response.status);
 
-    // Forward headers
     response.headers.forEach((value, key) => {
       if (!['content-encoding', 'transfer-encoding'].includes(key.toLowerCase())) {
         reply.header(key, value);

@@ -1,22 +1,27 @@
 import { create } from 'zustand';
-import type { InterceptorSettings, PauseMode } from '@playingpack/shared';
+import type { Settings, CacheMode } from '@playingpack/shared';
 
-interface InterceptorStore {
-  settings: InterceptorSettings;
+interface SettingsStore {
+  settings: Settings;
   connected: boolean;
+  version: string | null;
 
   // Actions
-  setSettings: (settings: InterceptorSettings) => void;
-  updateSettings: (settings: Partial<InterceptorSettings>) => void;
+  setSettings: (settings: Settings) => void;
+  updateSettings: (settings: Partial<Settings>) => void;
   setConnected: (connected: boolean) => void;
-  setPauseMode: (mode: PauseMode) => void;
+  setCacheMode: (mode: CacheMode) => void;
+  setIntervene: (intervene: boolean) => void;
+  setVersion: (version: string) => void;
 }
 
-export const useInterceptorStore = create<InterceptorStore>((set) => ({
+export const useSettingsStore = create<SettingsStore>((set) => ({
   settings: {
-    pause: 'off',
+    cache: 'read-write',
+    intervene: true,
   },
   connected: false,
+  version: null,
 
   setSettings: (settings) => {
     set({ settings });
@@ -32,9 +37,22 @@ export const useInterceptorStore = create<InterceptorStore>((set) => ({
     set({ connected });
   },
 
-  setPauseMode: (mode) => {
+  setCacheMode: (mode) => {
     set((state) => ({
-      settings: { ...state.settings, pause: mode },
+      settings: { ...state.settings, cache: mode },
     }));
   },
+
+  setIntervene: (intervene) => {
+    set((state) => ({
+      settings: { ...state.settings, intervene },
+    }));
+  },
+
+  setVersion: (version) => {
+    set({ version });
+  },
 }));
+
+// Keep old export name for backwards compatibility during migration
+export const useInterceptorStore = useSettingsStore;

@@ -2,72 +2,38 @@ import type { RequestState } from '@playingpack/shared';
 
 interface StatusBadgeProps {
   state: RequestState;
-  statusCode?: number;
-  cached?: boolean;
+  cacheHit?: boolean;
 }
 
-export function StatusBadge({ state, statusCode, cached }: StatusBadgeProps) {
+export function StatusBadge({ state, cacheHit }: StatusBadgeProps) {
   const getStatusInfo = (): { label: string; className: string } => {
     switch (state) {
-      case 'LOOKUP':
+      case 'pending':
         return {
-          label: 'LOOKUP',
-          className: 'bg-gray-500/10 text-gray-300 border border-gray-500/30',
-        };
-      case 'CONNECT':
-        return {
-          label: 'CONNECT',
-          className: 'bg-blue-500/10 text-blue-400 border border-blue-500/30',
-        };
-      case 'STREAMING':
-        return {
-          label: 'STREAM',
-          className: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30',
-        };
-      case 'PAUSED':
-        return {
-          label: 'PAUSED',
+          label: 'WAITING',
           className: 'bg-orange-500/10 text-orange-400 border border-orange-500/30 animate-pulse',
         };
-      case 'TOOL_CALL':
+      case 'processing':
         return {
-          label: 'TOOL CALL',
+          label: 'PROCESSING',
+          className: 'bg-blue-500/10 text-blue-400 border border-blue-500/30',
+        };
+      case 'reviewing':
+        return {
+          label: 'REVIEW',
           className: 'bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse',
         };
-      case 'FLUSH':
-        return {
-          label: 'FLUSH',
-          className: 'bg-green-500/10 text-green-400 border border-green-500/30',
-        };
-      case 'INJECT':
-        return {
-          label: 'MOCK',
-          className: 'bg-purple-500/10 text-purple-400 border border-purple-500/30',
-        };
-      case 'REPLAY':
-        return {
-          label: 'CACHE',
-          className: 'bg-teal-500/10 text-teal-400 border border-teal-500/30',
-        };
-      case 'COMPLETE':
-        if (cached) {
+      case 'complete':
+        if (cacheHit) {
           return {
             label: 'CACHED',
             className: 'bg-teal-500/10 text-teal-400 border border-teal-500/30',
           };
         }
-        if (statusCode && statusCode >= 400) {
-          return {
-            label: `${statusCode}`,
-            className: 'bg-red-500/10 text-red-400 border border-red-500/30',
-          };
-        }
         return {
-          label: `${statusCode || 200}`,
+          label: 'DONE',
           className: 'bg-green-500/10 text-green-400 border border-green-500/30',
         };
-      case 'ERROR':
-        return { label: 'ERROR', className: 'bg-red-500/10 text-red-400 border border-red-500/30' };
       default:
         return {
           label: state,

@@ -9,7 +9,7 @@ import { registerProxyRoutes } from './proxy/routes.js';
 import { registerStaticUI } from './static.js';
 import { handleConnection } from './websocket/handler.js';
 import { initLogger, logger } from './logger.js';
-import { initSessionManager } from './interceptor/session-manager.js';
+import { initSessionManager } from './session/manager.js';
 
 /**
  * Create and start the PlayingPack server
@@ -24,15 +24,17 @@ export async function startServer(config: PlayingPackConfig): Promise<{
 
   // Initialize session manager with config settings
   initSessionManager({
-    pause: config.pause,
+    cache: config.cache,
+    intervene: config.intervene,
   });
 
   // Initialize file logger
-  await initLogger(config.logsDir);
+  await initLogger(config.logPath);
   await logger.info('Server starting', {
     upstream: config.upstream,
-    tapesDir: config.tapesDir,
-    record: config.record,
+    cachePath: config.cachePath,
+    cache: config.cache,
+    intervene: config.intervene,
     headless: config.headless,
   });
 
@@ -75,15 +77,13 @@ export async function startServer(config: PlayingPackConfig): Promise<{
   // Register proxy routes with config
   registerProxyRoutes(server, {
     upstream: config.upstream,
-    tapesDir: config.tapesDir,
-    record: config.record,
+    cachePath: config.cachePath,
+    cache: config.cache,
   });
 
   // Register static UI (unless headless mode)
   if (!config.headless) {
     await registerStaticUI(server);
-  } else {
-    console.log('  Running in headless mode (no UI)');
   }
 
   // Start server

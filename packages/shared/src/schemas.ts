@@ -1,6 +1,43 @@
 import { z } from 'zod';
 
-// OpenAI Chat Completion request schema
+// =============================================================================
+// Configuration Schemas
+// =============================================================================
+
+/** Cache mode schema */
+export const cacheModeSchema = z.enum(['off', 'read', 'read-write']);
+
+/** PlayingPack config schema */
+export const playingPackConfigSchema = z.object({
+  // Core settings
+  cache: cacheModeSchema.optional(),
+  intervene: z.boolean().optional(),
+
+  // Infrastructure settings
+  upstream: z.string().url().optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  host: z.string().optional(),
+  cachePath: z.string().optional(),
+  logPath: z.string().optional(),
+  headless: z.boolean().optional(),
+});
+
+/** Runtime settings schema */
+export const settingsSchema = z.object({
+  cache: cacheModeSchema,
+  intervene: z.boolean(),
+});
+
+/** Partial settings for updates */
+export const updateSettingsSchema = z.object({
+  settings: settingsSchema.partial(),
+});
+
+// =============================================================================
+// OpenAI Request Schema
+// =============================================================================
+
+/** OpenAI Chat Completion request schema */
 export const chatCompletionRequestSchema = z
   .object({
     model: z.string(),
@@ -55,98 +92,75 @@ export const chatCompletionRequestSchema = z
   })
   .passthrough(); // Allow additional properties
 
-// Mock request schema
-export const mockRequestSchema = z.object({
-  requestId: z.string(),
-  type: z.enum(['text', 'error', 'tool_result']),
-  content: z.string(),
+// =============================================================================
+// Cache Schemas
+// =============================================================================
+
+/** Cache chunk schema */
+export const cacheChunkSchema = z.object({
+  data: z.string(),
+  delay: z.number(),
 });
 
-// Allow request schema
-export const allowRequestSchema = z.object({
-  requestId: z.string(),
-});
-
-// Pre-intercept action schemas
-export const preInterceptAllowSchema = z.object({
-  requestId: z.string(),
-});
-
-export const preInterceptEditSchema = z.object({
-  requestId: z.string(),
-  editedBody: z.record(z.unknown()),
-});
-
-export const preInterceptUseCacheSchema = z.object({
-  requestId: z.string(),
-});
-
-export const preInterceptMockSchema = z.object({
-  requestId: z.string(),
-  mockContent: z.string(),
-});
-
-// Interceptor settings schema
-export const interceptorSettingsSchema = z.object({
-  pause: z.enum(['off', 'tool-calls', 'all']),
-});
-
-// Partial interceptor settings for updates
-export const updateSettingsSchema = z.object({
-  settings: interceptorSettingsSchema.partial(),
-});
-
-// Tape schema for validation
-export const tapeChunkSchema = z.object({
-  c: z.string(),
-  d: z.number(),
-});
-
-export const tapeMetaSchema = z.object({
-  id: z.string(),
+/** Cached response schema */
+export const cachedResponseSchema = z.object({
   hash: z.string(),
   timestamp: z.string(),
-  model: z.string(),
-  endpoint: z.string(),
-});
-
-export const tapeSchema = z.object({
-  meta: tapeMetaSchema,
   request: z.object({
-    body: z.unknown(),
+    model: z.string(),
+    messages: z.array(z.unknown()),
   }),
   response: z.object({
     status: z.number(),
-    chunks: z.array(tapeChunkSchema),
+    body: z.unknown().optional(),
+    chunks: z.array(cacheChunkSchema).optional(),
   }),
 });
 
-// Recording mode schema
-export const recordModeSchema = z.enum(['auto', 'off', 'replay-only']);
+// =============================================================================
+// Action Schemas
+// =============================================================================
 
-// Pause mode schema
-export const pauseModeSchema = z.enum(['off', 'tool-calls', 'all']);
+/** Point 1 action schema */
+export const point1ActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('llm') }),
+  z.object({ action: z.literal('cache') }),
+  z.object({ action: z.literal('mock'), content: z.string() }),
+]);
 
-// PlayingPack config schema
-export const playingPackConfigSchema = z.object({
-  upstream: z.string().url().optional(),
-  tapesDir: z.string().optional(),
-  logsDir: z.string().optional(),
-  record: recordModeSchema.optional(),
-  headless: z.boolean().optional(),
-  port: z.number().int().min(1).max(65535).optional(),
-  host: z.string().optional(),
-  pause: pauseModeSchema.optional(),
+/** Point 2 action schema */
+export const point2ActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('return') }),
+  z.object({ action: z.literal('modify'), content: z.string() }),
+]);
+
+/** Point 1 action message schema (for WebSocket) */
+export const point1ActionMessageSchema = z.object({
+  type: z.literal('point1_action'),
+  requestId: z.string(),
+  action: point1ActionSchema,
 });
 
-// Type exports from schemas
+/** Point 2 action message schema (for WebSocket) */
+export const point2ActionMessageSchema = z.object({
+  type: z.literal('point2_action'),
+  requestId: z.string(),
+  action: point2ActionSchema,
+});
+
+/** WebSocket message schema (client -> server) */
+export const wsMessageSchema = z.discriminatedUnion('type', [
+  point1ActionMessageSchema,
+  point2ActionMessageSchema,
+]);
+
+// =============================================================================
+// Type Exports
+// =============================================================================
+
 export type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;
-export type MockRequestInput = z.infer<typeof mockRequestSchema>;
-export type AllowRequestInput = z.infer<typeof allowRequestSchema>;
-export type PreInterceptAllowInput = z.infer<typeof preInterceptAllowSchema>;
-export type PreInterceptEditInput = z.infer<typeof preInterceptEditSchema>;
-export type PreInterceptUseCacheInput = z.infer<typeof preInterceptUseCacheSchema>;
-export type PreInterceptMockInput = z.infer<typeof preInterceptMockSchema>;
-export type InterceptorSettingsInput = z.infer<typeof interceptorSettingsSchema>;
-export type TapeInput = z.infer<typeof tapeSchema>;
+export type CachedResponseInput = z.infer<typeof cachedResponseSchema>;
+export type Point1ActionInput = z.infer<typeof point1ActionSchema>;
+export type Point2ActionInput = z.infer<typeof point2ActionSchema>;
+export type SettingsInput = z.infer<typeof settingsSchema>;
 export type PlayingPackConfigInput = z.infer<typeof playingPackConfigSchema>;

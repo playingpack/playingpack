@@ -1,18 +1,18 @@
 import { useEffect } from 'react';
+import { Header } from './Header';
 import { RequestList } from './RequestList';
-import { InterceptorToggle } from './InterceptorToggle';
-import { Inspector } from './Inspector';
-import { MockEditor } from './MockEditor';
+import { RequestDetail } from './RequestDetail';
 import { useRequestStore } from '../stores/requestStore';
-import { useInterceptorStore } from '../stores/interceptorStore';
+import { useSettingsStore } from '../stores/interceptorStore';
 import { wsManager } from '../lib/websocket';
 import { trpc } from '../lib/trpc';
 
 export function Layout() {
   const selectedSession = useRequestStore((s) => s.getSelectedSession());
   const handleWSEvent = useRequestStore((s) => s.handleWSEvent);
-  const setConnected = useInterceptorStore((s) => s.setConnected);
-  const setSettings = useInterceptorStore((s) => s.setSettings);
+  const setConnected = useSettingsStore((s) => s.setConnected);
+  const setSettings = useSettingsStore((s) => s.setSettings);
+  const setVersion = useSettingsStore((s) => s.setVersion);
 
   // Fetch initial settings
   const settingsQuery = trpc.getSettings.useQuery();
@@ -21,8 +21,11 @@ export function Layout() {
   useEffect(() => {
     if (settingsQuery.data) {
       setSettings(settingsQuery.data.settings);
+      if (settingsQuery.data.version) {
+        setVersion(settingsQuery.data.version);
+      }
     }
-  }, [settingsQuery.data, setSettings]);
+  }, [settingsQuery.data, setSettings, setVersion]);
 
   // Connect to WebSocket
   useEffect(() => {
@@ -45,62 +48,59 @@ export function Layout() {
   }, [handleWSEvent, setConnected]);
 
   return (
-    <div className="flex h-screen bg-pp-dark">
-      {/* Left Sidebar - Request List */}
-      <div className="w-80 flex-shrink-0 border-r border-pp-light flex flex-col bg-pp-darker">
-        {/* Header */}
-        <div className="h-14 border-b border-pp-light flex items-center justify-between px-4">
-          <h1 className="text-lg font-bold tracking-tight text-white">
-            Playing<span className="text-pp-accent">Pack</span>
-          </h1>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-pp-accent animate-pulse" />
-            <span className="text-xs font-mono text-gray-500">
-              :{window.location.port || '4747'}
-            </span>
-          </div>
-        </div>
+    <div className="flex flex-col h-screen bg-pp-dark">
+      {/* Header */}
+      <Header />
 
-        {/* Interceptor Toggle */}
-        <InterceptorToggle />
-
-        {/* Request List */}
-        <div className="flex-1 overflow-hidden">
-          <RequestList />
-        </div>
-      </div>
-
-      {/* Main Content - Inspector */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-pp-dark">
-        {selectedSession ? (
-          <>
-            <Inspector session={selectedSession} />
-            <MockEditor session={selectedSession} />
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <svg
-                className="w-16 h-16 mx-auto mb-4 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              <h2 className="text-xl font-medium text-gray-400 mb-2">Select a request</h2>
-              <p className="text-sm text-gray-600 max-w-md">
-                Click on a request in the sidebar to inspect its details, or wait for new requests
-                to come in.
-              </p>
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - Request List */}
+        <div className="w-72 flex-shrink-0 border-r border-pp-light flex flex-col bg-pp-darker">
+          <div className="p-3 border-b border-pp-light">
+            <div className="text-xs text-gray-500">
+              Requests
+              <span className="ml-2 text-gray-600">
+                Point agent to <code className="text-gray-400">localhost:4747/v1</code>
+              </span>
             </div>
           </div>
-        )}
+          <div className="flex-1 overflow-auto">
+            <RequestList />
+          </div>
+        </div>
+
+        {/* Right Panel - Request Detail */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-pp-dark">
+          {selectedSession ? (
+            <RequestDetail session={selectedSession} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center max-w-sm">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-pp-gray flex items-center justify-center">
+                  <svg
+                    className="w-8 h-8 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
+                    />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-medium text-gray-400 mb-2">Select a request</h2>
+                <p className="text-sm text-gray-600">
+                  Click a request to inspect details. When{' '}
+                  <span className="text-orange-400">Intervene</span> is enabled, requests will pause
+                  for your action.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

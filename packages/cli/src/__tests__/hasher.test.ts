@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeBody, hashRequest, shortHash } from '../tape/hasher.js';
+import { normalizeBody, hashRequest, shortHash } from '../cache/hasher.js';
 
 describe('normalizeBody', () => {
   it('should sort object keys alphabetically', () => {

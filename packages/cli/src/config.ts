@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { createJiti } from 'jiti';
 import { playingPackConfigSchema } from '@playingpack/shared';
-import type { PlayingPackConfig, PlayingPackUserConfig, RecordMode } from '@playingpack/shared';
+import type { PlayingPackConfig, PlayingPackUserConfig, CacheMode } from '@playingpack/shared';
 
 // JS/TS config files (preferred, in order of priority)
 const JS_CONFIG_FILES = [
@@ -22,14 +22,17 @@ const JSON_CONFIG_FILES = [
 ];
 
 const DEFAULT_CONFIG: PlayingPackConfig = {
+  // Core settings
+  cache: 'read-write',
+  intervene: true,
+
+  // Infrastructure settings
   upstream: 'https://api.openai.com',
-  tapesDir: '.playingpack/tapes',
-  logsDir: '.playingpack/logs',
-  record: 'auto',
-  headless: false,
   port: 4747,
   host: '0.0.0.0',
-  pause: 'off',
+  cachePath: '.playingpack/cache',
+  logPath: '.playingpack/logs',
+  headless: false,
 };
 
 /**
@@ -136,8 +139,9 @@ export interface CLIOptions {
   host?: string;
   ui?: boolean; // Commander uses --no-ui which sets ui: false
   upstream?: string;
-  tapesDir?: string;
-  record?: RecordMode;
+  cachePath?: string;
+  cache?: CacheMode;
+  intervene?: boolean;
 }
 
 /**
@@ -167,11 +171,14 @@ export async function loadConfig(cliOptions: CLIOptions = {}): Promise<PlayingPa
   if (cliOptions.upstream !== undefined) {
     config.upstream = cliOptions.upstream;
   }
-  if (cliOptions.tapesDir !== undefined) {
-    config.tapesDir = cliOptions.tapesDir;
+  if (cliOptions.cachePath !== undefined) {
+    config.cachePath = cliOptions.cachePath;
   }
-  if (cliOptions.record !== undefined) {
-    config.record = cliOptions.record;
+  if (cliOptions.cache !== undefined) {
+    config.cache = cliOptions.cache;
+  }
+  if (cliOptions.intervene !== undefined) {
+    config.intervene = cliOptions.intervene;
   }
 
   return config;

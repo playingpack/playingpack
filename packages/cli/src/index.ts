@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
-import type { RecordMode } from '@playingpack/shared';
+import open from 'open';
+import type { CacheMode } from '@playingpack/shared';
 import { startServer } from './server.js';
 import { loadConfig } from './config.js';
 
@@ -9,7 +10,7 @@ const VERSION = '1.0.0';
 
 program
   .name('playingpack')
-  .description('Chrome DevTools for AI Agents - Local reverse proxy and debugger')
+  .description('Chrome DevTools for AI Agents - Debug and test your AI agent LLM calls')
   .version(VERSION);
 
 program
@@ -17,16 +18,16 @@ program
   .description('Start the PlayingPack proxy server')
   .option('-p, --port <port>', 'Port to listen on')
   .option('-h, --host <host>', 'Host to bind to')
-  .option('--no-ui', 'Run without UI server (headless mode for CI/CD)')
+  .option('--no-ui', 'Run without UI (headless mode for CI/CD)')
   .option('--upstream <url>', 'Upstream API URL (default: https://api.openai.com)')
-  .option('--tapes-dir <path>', 'Directory for tape storage (default: .playingpack/tapes)')
-  .option('--record <mode>', 'Recording mode: auto, off, replay-only (default: auto)')
+  .option('--cache-path <path>', 'Directory for cached responses (default: .playingpack/cache)')
+  .option('--cache <mode>', 'Cache mode: off, read, read-write (default: read-write)')
+  .option('--intervene', 'Enable intervention mode (pause for human actions)')
   .action(async (options) => {
     console.log();
     console.log('  ╔═══════════════════════════════════════════════════════════╗');
     console.log('  ║                                                           ║');
-    console.log('  ║   ▓▓▓▓  PlayingPack - The Flight Simulator  ▓▓▓▓          ║');
-    console.log('  ║   Chrome DevTools for AI Agents                           ║');
+    console.log('  ║   PlayingPack - Debug your AI Agents                      ║');
     console.log('  ║                                                           ║');
     console.log('  ╚═══════════════════════════════════════════════════════════╝');
     console.log();
@@ -38,8 +39,9 @@ program
         host: options.host,
         ui: options.ui,
         upstream: options.upstream,
-        tapesDir: options.tapesDir,
-        record: options.record as RecordMode | undefined,
+        cachePath: options.cachePath,
+        cache: options.cache as CacheMode | undefined,
+        intervene: options.intervene,
       });
 
       const { port, host } = await startServer(config);
@@ -54,13 +56,23 @@ program
       console.log(`  │  Local:    ${localUrl.padEnd(44)}│`);
       console.log(`  │  Network:  ${networkUrl.padEnd(44)}│`);
       console.log('  │                                                         │');
+      console.log('  │  Settings:                                              │');
+      console.log(`  │    Cache:     ${config.cache.padEnd(41)}│`);
+      console.log(`  │    Intervene: ${String(config.intervene).padEnd(41)}│`);
+      console.log('  │                                                         │');
       console.log('  │  To use with your AI agent, set:                        │');
       console.log(`  │  baseURL = "${localUrl}/v1"`.padEnd(60) + '│');
-      if (!config.headless) {
-        console.log('  │                                                         │');
-        console.log('  │  Dashboard: Open the local URL in your browser          │');
-      }
       console.log('  └─────────────────────────────────────────────────────────┘');
+      console.log();
+
+      // Open browser if not headless
+      if (!config.headless) {
+        console.log('  Opening dashboard in browser...');
+        await open(localUrl);
+      } else {
+        console.log('  Running in headless mode (no UI)');
+      }
+
       console.log();
       console.log('  Waiting for requests...');
       console.log();
