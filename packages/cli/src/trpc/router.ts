@@ -5,7 +5,8 @@ import type { Context } from './context.js';
 import { updateSettingsSchema, point1ActionSchema, point2ActionSchema } from '@playingpack/shared';
 
 const require = createRequire(import.meta.url);
-const pkg = require('../../package.json') as { version: string };
+// Path is relative to dist/index.js after bundling
+const pkg = require('../package.json') as { version: string };
 
 const t = initTRPC.context<Context>().create();
 
