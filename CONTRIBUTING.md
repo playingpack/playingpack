@@ -8,8 +8,8 @@ playingpack/
 │   ├── shared/           # TypeScript types & Zod schemas
 │   ├── cli/              # Fastify proxy server
 │   │   ├── proxy/        # Routes, upstream, SSE parsing
-│   │   ├── tape/         # Recording & playback
-│   │   ├── interceptor/  # Session state machine
+│   │   ├── cache/        # Response caching & playback
+│   │   ├── session/      # Session state management
 │   │   ├── mock/         # Synthetic response generator
 │   │   ├── trpc/         # API procedures
 │   │   └── websocket/    # Real-time events
