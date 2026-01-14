@@ -5,9 +5,10 @@
 // Request state machine states
 export type RequestState =
   | 'LOOKUP' // Checking for cached tape
+  | 'PAUSED' // Request paused before LLM call, waiting for user approval
   | 'CONNECT' // Opening upstream connection
   | 'STREAMING' // Piping chunks through
-  | 'INTERCEPT' // Paused, waiting for user action
+  | 'TOOL_CALL' // Tool call detected, waiting for user decision
   | 'FLUSH' // Resuming with real data
   | 'INJECT' // Sending mock data
   | 'REPLAY' // Playing back cached tape
@@ -93,7 +94,7 @@ export interface RequestSession {
   cached?: boolean;
 }
 
-// WebSocket event: Intercept notification
+// WebSocket event: Intercept notification (after LLM response)
 export interface InterceptEvent {
   type: 'intercept';
   requestId: string;
@@ -101,6 +102,18 @@ export interface InterceptEvent {
     name: string;
     arguments: string;
   };
+  status: 'paused';
+}
+
+// WebSocket event: Pre-intercept notification (before LLM call)
+export interface PreInterceptEvent {
+  type: 'pre_intercept';
+  requestId: string;
+  request: {
+    model: string;
+    messages: unknown[];
+  };
+  hasCachedResponse: boolean;
   status: 'paused';
 }
 
@@ -119,7 +132,11 @@ export interface RequestCompleteEvent {
 }
 
 // Union of all WebSocket events
-export type WSEvent = InterceptEvent | RequestUpdateEvent | RequestCompleteEvent;
+export type WSEvent =
+  | InterceptEvent
+  | PreInterceptEvent
+  | RequestUpdateEvent
+  | RequestCompleteEvent;
 
 // Mock request payload from UI
 export interface MockRequest {
@@ -131,6 +148,16 @@ export interface MockRequest {
 // Allow request payload from UI
 export interface AllowRequest {
   requestId: string;
+}
+
+// Pre-intercept action types
+export type PreInterceptAction = 'allow' | 'edit' | 'use_cache' | 'mock';
+
+// Pre-intercept result from session manager
+export interface PreInterceptResult {
+  action: PreInterceptAction;
+  editedBody?: Record<string, unknown>;
+  mockContent?: string;
 }
 
 // Interceptor settings

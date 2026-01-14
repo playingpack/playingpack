@@ -96,6 +96,36 @@ class WebSocketManager {
     this.send({ type: 'mock', requestId, content });
   }
 
+  // Pre-intercept actions (before LLM call)
+
+  /**
+   * Allow a pre-intercepted request to proceed to LLM
+   */
+  preInterceptAllow(requestId: string): void {
+    this.send({ type: 'pre_allow', requestId });
+  }
+
+  /**
+   * Edit and send a pre-intercepted request
+   */
+  preInterceptEdit(requestId: string, editedBody: Record<string, unknown>): void {
+    this.send({ type: 'pre_edit', requestId, editedBody });
+  }
+
+  /**
+   * Use cached response for a pre-intercepted request
+   */
+  preInterceptUseCache(requestId: string): void {
+    this.send({ type: 'pre_use_cache', requestId });
+  }
+
+  /**
+   * Mock response for a pre-intercepted request
+   */
+  preInterceptMock(requestId: string, mockContent: string): void {
+    this.send({ type: 'pre_mock', requestId, mockContent });
+  }
+
   /**
    * Subscribe to WebSocket events
    */

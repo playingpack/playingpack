@@ -24,9 +24,14 @@ export function StatusBadge({ state, statusCode, cached }: StatusBadgeProps) {
           label: 'STREAM',
           className: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30',
         };
-      case 'INTERCEPT':
+      case 'PAUSED':
         return {
           label: 'PAUSED',
+          className: 'bg-orange-500/10 text-orange-400 border border-orange-500/30 animate-pulse',
+        };
+      case 'TOOL_CALL':
+        return {
+          label: 'TOOL CALL',
           className: 'bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse',
         };
       case 'FLUSH':

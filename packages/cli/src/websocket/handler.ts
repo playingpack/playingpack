@@ -60,6 +60,7 @@ function handleClientMessage(socket: WebSocket, message: unknown): void {
   const sessionManager = getSessionManager();
 
   switch (msg.type) {
+    // Post-intercept actions (after LLM response)
     case 'allow':
       if (typeof msg.requestId === 'string') {
         sessionManager.allowRequest(msg.requestId);
@@ -69,6 +70,31 @@ function handleClientMessage(socket: WebSocket, message: unknown): void {
     case 'mock':
       if (typeof msg.requestId === 'string' && typeof msg.content === 'string') {
         sessionManager.mockRequest(msg.requestId, msg.content);
+      }
+      break;
+
+    // Pre-intercept actions (before LLM call)
+    case 'pre_allow':
+      if (typeof msg.requestId === 'string') {
+        sessionManager.preInterceptAllow(msg.requestId);
+      }
+      break;
+
+    case 'pre_edit':
+      if (typeof msg.requestId === 'string' && typeof msg.editedBody === 'object') {
+        sessionManager.preInterceptEdit(msg.requestId, msg.editedBody as Record<string, unknown>);
+      }
+      break;
+
+    case 'pre_use_cache':
+      if (typeof msg.requestId === 'string') {
+        sessionManager.preInterceptUseCache(msg.requestId);
+      }
+      break;
+
+    case 'pre_mock':
+      if (typeof msg.requestId === 'string' && typeof msg.mockContent === 'string') {
+        sessionManager.preInterceptMock(msg.requestId, msg.mockContent);
       }
       break;
 

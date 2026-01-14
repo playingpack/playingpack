@@ -28,7 +28,7 @@ PlayingPack solves these problems:
 |---------|----------|
 | Expensive iteration | **VCR Mode** — Record once, replay forever. Zero API costs after first run. |
 | Non-deterministic tests | **Tape playback** — Same request always returns same response. Deterministic by design. |
-| Blind debugging | **Interceptor** — Pause on tool calls, inspect payloads, see exactly what the LLM decided. |
+| Blind debugging | **Interceptor** — Pause before and after LLM calls. Inspect, edit, or mock at any point. |
 | Slow feedback | **Instant replay** — Cached responses return in milliseconds, not seconds. |
 | CI/CD reliability | **Replay-only mode** — Run tests against recorded tapes. Fast, free, deterministic. |
 
@@ -43,7 +43,11 @@ Record API responses and replay them deterministically. First request hits the r
 Browser-based UI showing live request streaming, status updates, request/response inspection with syntax highlighting, and full history.
 
 ### Interceptor
-Pause requests when tool calls are detected. Inspect the exact function name and arguments. Decide whether to allow the request to continue or inject a mock response.
+Pause requests at two points in the lifecycle:
+- **Before LLM call** — Inspect the request, edit it, use a cached response, or mock without calling the LLM
+- **After LLM response** — When tool calls are detected, inspect the function name and arguments before allowing or mocking
+
+Full control over request/response flow with the ability to inject mock responses at any point.
 
 ### Mock Editor
 Monaco-powered JSON editor for crafting custom responses. Test error scenarios, edge cases, or specific tool call results without touching the real API.
@@ -167,14 +171,23 @@ Your tests become:
 
 ### Debugging Agent Behavior
 
-Enable pause mode to stop on tool calls and inspect what your agent is doing:
+Enable pause mode to intercept requests and inspect what your agent is doing:
 
+**Pre-request interception (before LLM call):**
 1. Start PlayingPack and open the dashboard
-2. Toggle "Pause on tool calls" in the UI
+2. Toggle "Pause" mode in the UI (tool-calls or all)
 3. Run your agent
-4. When a tool call is detected, the request pauses
-5. Inspect the function name, arguments, and full context
-6. Click "Allow" to continue or "Mock" to inject a custom response
+4. Every request pauses before being sent to the LLM
+5. You can:
+   - **Allow** — Send the original request to the LLM
+   - **Edit** — Modify the request body, then send
+   - **Use Cache** — Replay from cache if available (saves API costs)
+   - **Mock** — Return a mock response without calling the LLM
+
+**Post-response interception (after LLM response):**
+1. When the LLM returns a tool call, the request pauses
+2. Inspect the function name, arguments, and full context
+3. Click "Allow" to send the response to your agent, or "Mock" to inject a custom response
 
 ### CI/CD Integration
 
@@ -351,24 +364,38 @@ Your Agent  →  PlayingPack (localhost:4747)  →  Upstream API
 
 1. **Request arrives** at `POST /v1/chat/completions`
 2. **Cache lookup** — Request body is normalized and hashed (SHA-256)
-3. **Cache hit?** → Replay tape with original timing
-4. **Cache miss?** → Forward to upstream, stream response, record tape
-5. **Tool call detected?** → Optionally pause for inspection
-6. **Response complete** → Save tape, notify dashboard
+3. **Pre-intercept?** → If pause enabled, wait for user action (allow/edit/cache/mock)
+4. **Cache hit?** → Replay tape with original timing
+5. **Cache miss?** → Forward to upstream, stream response, record tape
+6. **Tool call detected?** → Optionally pause for inspection (post-intercept)
+7. **Response complete** → Save tape, notify dashboard
 
 ### State Machine
 
 ```
-LOOKUP → (cache hit) → REPLAY → COMPLETE
-       ↘ (cache miss) → CONNECT → STREAMING → COMPLETE
-                                       ↓ (tool call + pause enabled)
-                                   INTERCEPT
-                                       ↓
-                          ┌────────────┴────────────┐
-                          ↓                         ↓
-                     FLUSH (allow)             INJECT (mock)
-                          ↓                         ↓
-                       COMPLETE                 COMPLETE
+LOOKUP → (pause enabled) → PRE_INTERCEPT
+                               ↓
+              ┌────────────────┼────────────────┬─────────────────┐
+              ↓                ↓                ↓                 ↓
+         REPLAY           INJECT          CONNECT            CONNECT
+        (cache)           (mock)         (allow)        (edit + allow)
+              ↓                ↓                ↓                 ↓
+          COMPLETE         COMPLETE       STREAMING          STREAMING
+                                              ↓                   ↓
+                              (tool call + pause enabled)         │
+                                              ↓                   │
+                                          INTERCEPT               │
+                                              ↓                   │
+                                 ┌────────────┴────────────┐      │
+                                 ↓                         ↓      │
+                            FLUSH (allow)             INJECT (mock)
+                                 ↓                         ↓      │
+                              COMPLETE                 COMPLETE   │
+                                                                  ↓
+                                                              COMPLETE
+
+(Without pause enabled: LOOKUP → cache hit → REPLAY → COMPLETE
+                        LOOKUP → cache miss → CONNECT → STREAMING → COMPLETE)
 ```
 
 ### Tape Format

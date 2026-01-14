@@ -1,21 +1,29 @@
 import { create } from 'zustand';
 import type { RequestSession, WSEvent } from '@playingpack/shared';
 
+// Extended session with pre-intercept info
+export interface ExtendedSession extends RequestSession {
+  preInterceptInfo?: {
+    hasCachedResponse: boolean;
+    model: string;
+  };
+}
+
 interface RequestStore {
-  sessions: Map<string, RequestSession>;
+  sessions: Map<string, ExtendedSession>;
   selectedId: string | null;
 
   // Actions
-  setSession: (session: RequestSession) => void;
+  setSession: (session: ExtendedSession) => void;
   removeSession: (id: string) => void;
   clearSessions: () => void;
   selectSession: (id: string | null) => void;
   handleWSEvent: (event: WSEvent) => void;
 
   // Getters
-  getSession: (id: string) => RequestSession | undefined;
-  getSortedSessions: () => RequestSession[];
-  getSelectedSession: () => RequestSession | undefined;
+  getSession: (id: string) => ExtendedSession | undefined;
+  getSortedSessions: () => ExtendedSession[];
+  getSelectedSession: () => ExtendedSession | undefined;
 }
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
@@ -62,7 +70,22 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         if (session) {
           setSession({
             ...session,
-            state: 'INTERCEPT',
+            state: 'TOOL_CALL',
+          });
+        }
+        break;
+      }
+
+      case 'pre_intercept': {
+        const session = get().sessions.get(event.requestId);
+        if (session) {
+          setSession({
+            ...session,
+            state: 'PAUSED',
+            preInterceptInfo: {
+              hasCachedResponse: event.hasCachedResponse,
+              model: event.request.model,
+            },
           });
         }
         break;

@@ -4,6 +4,7 @@ import type {
   ToolCall,
   InterceptorSettings,
   WSEvent,
+  PreInterceptResult,
 } from '@playingpack/shared';
 
 /**
@@ -23,6 +24,13 @@ export class SessionManager {
     {
       resolve: (action: 'allow' | 'mock') => void;
       mockContent?: string;
+    }
+  > = new Map();
+
+  private preInterceptResolvers: Map<
+    string,
+    {
+      resolve: (result: PreInterceptResult) => void;
     }
   > = new Map();
 
@@ -175,7 +183,7 @@ export class SessionManager {
       throw new Error(`Session ${id} not found`);
     }
 
-    this.updateState(id, 'INTERCEPT');
+    this.updateState(id, 'TOOL_CALL');
 
     // Emit intercept event
     if (session.toolCalls.length > 0) {
@@ -225,6 +233,108 @@ export class SessionManager {
       resolver.mockContent = content;
       this.updateState(id, 'INJECT');
       resolver.resolve('mock');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Check if we should pre-intercept this session (before LLM call)
+   * Uses the same pause setting as post-intercept
+   */
+  shouldPreIntercept(_id: string): boolean {
+    // Pre-intercept pauses before we know if there are tool calls,
+    // so 'tool-calls' mode behaves like 'all' for pre-intercept
+    return this.settings.pause !== 'off';
+  }
+
+  /**
+   * Enter pre-intercept state and wait for user action
+   */
+  async preIntercept(id: string, hasCachedResponse: boolean): Promise<PreInterceptResult> {
+    const session = this.sessions.get(id);
+    if (!session) {
+      throw new Error(`Session ${id} not found`);
+    }
+
+    this.updateState(id, 'PAUSED');
+
+    // Extract messages from body for UI display
+    const body = session.body as Record<string, unknown>;
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+
+    // Emit pre-intercept event
+    this.emit({
+      type: 'pre_intercept',
+      requestId: id,
+      request: {
+        model: session.model || 'unknown',
+        messages,
+      },
+      hasCachedResponse,
+      status: 'paused',
+    });
+
+    // Wait for user action
+    return new Promise((resolve) => {
+      this.preInterceptResolvers.set(id, { resolve });
+    });
+  }
+
+  /**
+   * Allow a pre-intercepted request to proceed
+   */
+  preInterceptAllow(id: string): boolean {
+    const resolver = this.preInterceptResolvers.get(id);
+    if (resolver) {
+      this.preInterceptResolvers.delete(id);
+      resolver.resolve({ action: 'allow' });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Edit and send a pre-intercepted request
+   */
+  preInterceptEdit(id: string, editedBody: Record<string, unknown>): boolean {
+    const resolver = this.preInterceptResolvers.get(id);
+    if (resolver) {
+      this.preInterceptResolvers.delete(id);
+      // Update session body for display
+      const session = this.sessions.get(id);
+      if (session) {
+        session.body = editedBody;
+        this.emit({ type: 'request_update', session });
+      }
+      resolver.resolve({ action: 'edit', editedBody });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Use cached response for a pre-intercepted request
+   */
+  preInterceptUseCache(id: string): boolean {
+    const resolver = this.preInterceptResolvers.get(id);
+    if (resolver) {
+      this.preInterceptResolvers.delete(id);
+      resolver.resolve({ action: 'use_cache' });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Mock response for a pre-intercepted request (without calling LLM)
+   */
+  preInterceptMock(id: string, mockContent: string): boolean {
+    const resolver = this.preInterceptResolvers.get(id);
+    if (resolver) {
+      this.preInterceptResolvers.delete(id);
+      this.updateState(id, 'INJECT');
+      resolver.resolve({ action: 'mock', mockContent });
       return true;
     }
     return false;
@@ -287,6 +397,7 @@ export class SessionManager {
   removeSession(id: string): void {
     this.sessions.delete(id);
     this.pendingResolvers.delete(id);
+    this.preInterceptResolvers.delete(id);
   }
 }
 

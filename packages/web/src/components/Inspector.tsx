@@ -18,7 +18,7 @@ export function Inspector({ session }: InspectorProps) {
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header */}
       <div className="p-4 border-b border-pp-light">
         <div className="flex items-center justify-between mb-2">

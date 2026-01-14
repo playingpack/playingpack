@@ -18,7 +18,8 @@ export function RequestItem({ session, selected, onClick }: RequestItemProps) {
 
   // Determine left border color based on state
   const getBorderClass = () => {
-    if (session.state === 'INTERCEPT') return 'border-l-amber-500';
+    if (session.state === 'PAUSED') return 'border-l-orange-500';
+    if (session.state === 'TOOL_CALL') return 'border-l-amber-500';
     if (selected) return 'border-l-blue-500';
     return 'border-l-transparent';
   };

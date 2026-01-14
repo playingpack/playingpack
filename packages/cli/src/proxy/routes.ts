@@ -88,8 +88,46 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
 
   const hasTape = shouldCheckTape && (await tapeExists(body, proxyConfig.tapesDir));
 
-  if (hasTape) {
-    // State 6: REPLAY - Play cached response
+  // Check if we should pre-intercept (pause before LLM call)
+  if (sessionManager.shouldPreIntercept(requestId)) {
+    console.log(
+      `  [PRE-INTERCEPT] Pausing before LLM call (cache ${hasTape ? 'available' : 'not available'})`
+    );
+    logger.info('Pre-intercept', { requestId, model: body.model, hasTape });
+
+    const preResult = await sessionManager.preIntercept(requestId, hasTape);
+    console.log(`  [PRE-ACTION] ${preResult.action}`);
+
+    switch (preResult.action) {
+      case 'use_cache':
+        if (hasTape) {
+          console.log(`  [CACHE] Using cached response`);
+          await replayFromTape(request, reply, requestId, body, clientStream);
+          return;
+        }
+        // Fall through to allow if no cache (shouldn't happen, UI should disable button)
+        console.log(`  [WARN] Cache requested but no tape available, proceeding to upstream`);
+        break;
+
+      case 'mock':
+        console.log(`  [MOCK] Sending mock response`);
+        await sendMockResponse(reply, requestId, preResult.mockContent || '', clientStream);
+        return;
+
+      case 'edit':
+        // Use the edited body for the request
+        if (preResult.editedBody) {
+          Object.assign(body, preResult.editedBody);
+          console.log(`  [EDIT] Request body modified`);
+        }
+        break;
+
+      case 'allow':
+        // Continue with original body
+        break;
+    }
+  } else if (hasTape) {
+    // No pre-intercept enabled, automatic replay from cache
     console.log(`  [CACHE HIT] Replaying from tape`);
     logger.info('Cache hit', { requestId, model: body.model });
     await replayFromTape(request, reply, requestId, body, clientStream);
@@ -97,7 +135,7 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   }
 
   // In replay-only mode, fail if no tape exists
-  if (replayOnly) {
+  if (replayOnly && !hasTape) {
     console.log(`  [REPLAY-ONLY] No tape found, rejecting request`);
     sessionManager.error(requestId, 'No tape found (replay-only mode)');
     reply.code(404).send({

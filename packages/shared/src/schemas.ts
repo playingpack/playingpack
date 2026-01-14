@@ -67,6 +67,25 @@ export const allowRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Pre-intercept action schemas
+export const preInterceptAllowSchema = z.object({
+  requestId: z.string(),
+});
+
+export const preInterceptEditSchema = z.object({
+  requestId: z.string(),
+  editedBody: z.record(z.unknown()),
+});
+
+export const preInterceptUseCacheSchema = z.object({
+  requestId: z.string(),
+});
+
+export const preInterceptMockSchema = z.object({
+  requestId: z.string(),
+  mockContent: z.string(),
+});
+
 // Interceptor settings schema
 export const interceptorSettingsSchema = z.object({
   pause: z.enum(['off', 'tool-calls', 'all']),
@@ -124,6 +143,10 @@ export const playingPackConfigSchema = z.object({
 export type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;
 export type MockRequestInput = z.infer<typeof mockRequestSchema>;
 export type AllowRequestInput = z.infer<typeof allowRequestSchema>;
+export type PreInterceptAllowInput = z.infer<typeof preInterceptAllowSchema>;
+export type PreInterceptEditInput = z.infer<typeof preInterceptEditSchema>;
+export type PreInterceptUseCacheInput = z.infer<typeof preInterceptUseCacheSchema>;
+export type PreInterceptMockInput = z.infer<typeof preInterceptMockSchema>;
 export type InterceptorSettingsInput = z.infer<typeof interceptorSettingsSchema>;
 export type TapeInput = z.infer<typeof tapeSchema>;
 export type PlayingPackConfigInput = z.infer<typeof playingPackConfigSchema>;
