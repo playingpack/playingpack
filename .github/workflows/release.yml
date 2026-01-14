@@ -1,10 +1,8 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ['CI']
+  push:
     branches: [main]
-    types: [completed]
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -18,7 +16,6 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     environment: prod
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
