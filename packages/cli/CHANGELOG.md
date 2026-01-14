@@ -1,5 +1,11 @@
 # playingpack
 
+## 0.3.2
+
+### Patch Changes
+
+- 84b919d: Version sync with npm registry
+
 ## 0.3.1
 
 ### Patch Changes
