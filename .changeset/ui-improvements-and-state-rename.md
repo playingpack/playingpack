@@ -1,7 +1,5 @@
 ---
 "playingpack": minor
-"@playingpack/shared": minor
-"@playingpack/web": minor
 ---
 
 Improve UI and rename states for clarity
