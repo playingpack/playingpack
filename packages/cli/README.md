@@ -26,27 +26,28 @@ PlayingPack solves these problems:
 
 | Problem | Solution |
 |---------|----------|
-| Expensive iteration | **VCR Mode** — Record once, replay forever. Zero API costs after first run. |
-| Non-deterministic tests | **Tape playback** — Same request always returns same response. Deterministic by design. |
-| Blind debugging | **Interceptor** — Pause on tool calls, inspect payloads, see exactly what the LLM decided. |
+| Expensive iteration | **Cache Mode** — Record once, replay forever. Zero API costs after first run. |
+| Non-deterministic tests | **Cache playback** — Same request always returns same response. Deterministic by design. |
+| Blind debugging | **Intervene Mode** — Pause before and after LLM calls. Inspect, edit, or mock at any point. |
 | Slow feedback | **Instant replay** — Cached responses return in milliseconds, not seconds. |
-| CI/CD reliability | **Replay-only mode** — Run tests against recorded tapes. Fast, free, deterministic. |
+| CI/CD reliability | **Read-only cache** — Run tests against cached responses. Fast, free, deterministic. |
 
 ---
 
 ## Features
 
-### VCR Mode
-Record API responses and replay them deterministically. First request hits the real API and saves a "tape." Subsequent identical requests replay from cache with original timing preserved.
+### Cache Mode
+Record API responses and replay them deterministically. First request hits the real API and saves the response to cache. Subsequent identical requests replay from cache with original timing preserved.
 
 ### Real-time Dashboard
 Browser-based UI showing live request streaming, status updates, request/response inspection with syntax highlighting, and full history.
 
-### Interceptor
-Pause requests when tool calls are detected. Inspect the exact function name and arguments. Decide whether to allow the request to continue or inject a mock response.
+### Intervene Mode
+Pause requests at two points in the lifecycle:
+- **Before LLM call** — Inspect the request, edit it, use a cached response, or mock without calling the LLM
+- **After LLM response** — Inspect the response before it reaches your agent, modify or mock as needed
 
-### Mock Editor
-Monaco-powered JSON editor for crafting custom responses. Test error scenarios, edge cases, or specific tool call results without touching the real API.
+Full control over request/response flow with the ability to inject mock responses at any point.
 
 ### SSE Streaming
 Full OpenAI-compatible streaming with proper chunk handling. Parses tool calls in real-time. Works exactly like the real API.
@@ -150,12 +151,12 @@ Navigate to [http://localhost:4747](http://localhost:4747) in your browser.
 Record your agent's API interactions once, then replay them in tests forever:
 
 ```bash
-# First run: records responses to .playingpack/tapes/
+# First run: records responses to .playingpack/cache/
 npx playingpack start &
 pytest tests/
 
 # Subsequent runs: replays from cache (instant, free)
-npx playingpack start --record replay-only &
+npx playingpack start --cache read &
 pytest tests/
 ```
 
@@ -167,33 +168,36 @@ Your tests become:
 
 ### Debugging Agent Behavior
 
-Enable pause mode to stop on tool calls and inspect what your agent is doing:
+Enable intervene mode to pause requests and inspect what your agent is doing:
 
-1. Start PlayingPack and open the dashboard
-2. Toggle "Pause on tool calls" in the UI
-3. Run your agent
-4. When a tool call is detected, the request pauses
-5. Inspect the function name, arguments, and full context
-6. Click "Allow" to continue or "Mock" to inject a custom response
+1. Start PlayingPack with `--intervene` flag or enable in the dashboard
+2. Run your agent
+3. At **Point 1** (before LLM call), choose:
+   - **Allow** — Send the original request to the LLM
+   - **Use Cache** — Replay from cache if available (saves API costs)
+   - **Mock** — Return a mock response without calling the LLM
+4. At **Point 2** (after LLM response), choose:
+   - **Return** — Send the response to your agent as-is
+   - **Modify** — Edit the response before sending to your agent
 
 ### CI/CD Integration
 
-Run your test suite against recorded tapes in CI:
+Run your test suite against cached responses in CI:
 
 ```bash
 # In your CI pipeline
-npx playingpack start --no-ui --record replay-only &
+npx playingpack start --no-ui --cache read &
 sleep 2  # Wait for server
 npm test
 ```
 
-If a tape is missing, the request fails immediately — no surprise API calls in CI.
+If a cached response is missing, the request fails immediately — no surprise API calls in CI.
 
 ```yaml
 # Example GitHub Actions step
 - name: Run tests with PlayingPack
   run: |
-    npx playingpack start --no-ui --record replay-only &
+    npx playingpack start --no-ui --cache read &
     sleep 2
     npm test
 ```
@@ -235,17 +239,20 @@ export default defineConfig({
   // Upstream API endpoint (default: https://api.openai.com)
   upstream: process.env.LLM_API_URL ?? 'https://api.openai.com',
 
-  // Directory for tape storage (default: .playingpack/tapes)
-  tapesDir: '.playingpack/tapes',
+  // Cache mode: 'off' | 'read' | 'read-write' (default: read-write)
+  // - off: Always hit upstream, never cache
+  // - read: Only read from cache, fail if missing
+  // - read-write: Read from cache if available, write new responses
+  cache: process.env.CI ? 'read' : 'read-write',
+
+  // Intervene mode: pause for human inspection (default: true)
+  intervene: true,
+
+  // Directory for cache storage (default: .playingpack/cache)
+  cachePath: '.playingpack/cache',
 
   // Directory for logs (default: .playingpack/logs)
-  logsDir: '.playingpack/logs',
-
-  // Recording mode: 'auto' | 'off' | 'replay-only' (default: auto)
-  // - auto: Record if no tape exists, replay if it does
-  // - off: Always hit upstream, never record
-  // - replay-only: Only replay from cache, fail if tape missing
-  record: process.env.CI ? 'replay-only' : 'auto',
+  logPath: '.playingpack/logs',
 
   // Server port (default: 4747)
   port: 4747,
@@ -255,12 +262,6 @@ export default defineConfig({
 
   // Run without UI in CI environments (default: false)
   headless: !!process.env.CI,
-
-  // Pause mode: 'off' | 'tool-calls' | 'all' (default: off)
-  // - off: No interception, requests flow through normally
-  // - tool-calls: Pause when LLM makes a tool/function call
-  // - all: Pause on every request
-  pause: 'off',
 });
 ```
 
@@ -277,8 +278,8 @@ export default defineConfig({
     ? 'https://api.openai.com'
     : 'http://localhost:11434/v1',
 
-  // CI: replay-only (fast, deterministic), Local: auto (record on miss)
-  record: process.env.CI ? 'replay-only' : 'auto',
+  // CI: read-only (fast, deterministic), Local: read-write (record on miss)
+  cache: process.env.CI ? 'read' : 'read-write',
 
   // No UI needed in CI
   headless: !!process.env.CI,
@@ -312,8 +313,9 @@ npx playingpack start [options]
 | `-h, --host <host>` | Host to bind to | `0.0.0.0` |
 | `--no-ui` | Run without UI (headless mode) | `false` |
 | `--upstream <url>` | Upstream API URL | `https://api.openai.com` |
-| `--tapes-dir <path>` | Directory for tape storage | `.playingpack/tapes` |
-| `--record <mode>` | Recording mode (`auto`, `off`, `replay-only`) | `auto` |
+| `--cache-path <path>` | Directory for cache storage | `.playingpack/cache` |
+| `--cache <mode>` | Cache mode (`off`, `read`, `read-write`) | `read-write` |
+| `--intervene` | Enable human intervention mode | `true` |
 
 ### Examples
 
@@ -321,14 +323,14 @@ npx playingpack start [options]
 # Proxy to a local LLM (Ollama)
 npx playingpack start --upstream http://localhost:11434/v1
 
-# CI mode: replay only, no UI, fail if tape missing
-npx playingpack start --no-ui --record replay-only
+# CI mode: read-only cache, no UI, fail if cache missing
+npx playingpack start --no-ui --cache read
 
-# Custom port and tapes directory
-npx playingpack start --port 8080 --tapes-dir ./test/fixtures/tapes
+# Custom port and cache directory
+npx playingpack start --port 8080 --cache-path ./test/fixtures/cache
 
-# Production OpenAI with custom tapes location
-npx playingpack start --tapes-dir ./recordings
+# Enable intervention mode for debugging
+npx playingpack start --intervene
 ```
 
 ---
@@ -351,29 +353,28 @@ Your Agent  →  PlayingPack (localhost:4747)  →  Upstream API
 
 1. **Request arrives** at `POST /v1/chat/completions`
 2. **Cache lookup** — Request body is normalized and hashed (SHA-256)
-3. **Cache hit?** → Replay tape with original timing
-4. **Cache miss?** → Forward to upstream, stream response, record tape
-5. **Tool call detected?** → Optionally pause for inspection
-6. **Response complete** → Save tape, notify dashboard
+3. **Intervention Point 1?** → If intervene enabled, wait for user action (allow/cache/mock)
+4. **Get response** → From cache (if available) or upstream LLM
+5. **Intervention Point 2?** → If intervene enabled, wait for user action (return/modify)
+6. **Response complete** → Save to cache (if enabled), notify dashboard
 
-### State Machine
+### Simple Mental Model
 
 ```
-LOOKUP → (cache hit) → REPLAY → COMPLETE
-       ↘ (cache miss) → CONNECT → STREAMING → COMPLETE
-                                       ↓ (tool call + pause enabled)
-                                   INTERCEPT
-                                       ↓
-                          ┌────────────┴────────────┐
-                          ↓                         ↓
-                     FLUSH (allow)             INJECT (mock)
-                          ↓                         ↓
-                       COMPLETE                 COMPLETE
+┌─────────────────────────────────────────────────────────────────────┐
+│                         PlayingPack                                  │
+│                                                                      │
+│   Cache: System remembers responses (read/write/off)                │
+│   Intervene: Human can inspect/modify at two points                 │
+│                                                                      │
+│   Request → [Point 1: Before LLM] → Response → [Point 2: After] →   │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Tape Format
+### Cache Format
 
-Tapes are stored as JSON files named by request hash:
+Cached responses are stored as JSON files named by request hash:
 
 ```json
 {
@@ -407,7 +408,7 @@ Requests are normalized before hashing to ensure deterministic matching:
 - Keys are sorted alphabetically
 - `stream` parameter is ignored (streaming and non-streaming match)
 - Timestamps and request IDs are removed
-- Result: SHA-256 hash used as tape filename
+- Result: SHA-256 hash used as cache filename
 
 ---
 
@@ -459,8 +460,8 @@ playingpack/
 │   ├── shared/        # TypeScript types & Zod schemas
 │   ├── cli/           # Fastify proxy server + CLI
 │   │   ├── proxy/     # HTTP routing, upstream client, SSE parsing
-│   │   ├── tape/      # Recording & playback
-│   │   ├── interceptor/  # Session state machine
+│   │   ├── cache/     # Response caching & playback
+│   │   ├── session/   # Session state management
 │   │   ├── mock/      # Synthetic response generation
 │   │   ├── trpc/      # API procedures
 │   │   └── websocket/ # Real-time events
@@ -480,14 +481,14 @@ A: No. Requests are forwarded to upstream unchanged. The only modification is ad
 **Q: Can I use this in production?**
 A: PlayingPack is designed for development and testing. For production, point your agents directly at your LLM provider.
 
-**Q: How do I update recordings when my prompts change?**
-A: Delete the relevant tapes from `.playingpack/tapes/` and run your tests again. New tapes will be recorded automatically.
+**Q: How do I update cached responses when my prompts change?**
+A: Delete the relevant files from `.playingpack/cache/` and run your tests again. New responses will be cached automatically.
 
 **Q: Does it work with function calling / tool use?**
-A: Yes. PlayingPack fully supports OpenAI's function calling and tool use. The interceptor can pause specifically on tool calls for inspection.
+A: Yes. PlayingPack fully supports OpenAI's function calling and tool use.
 
-**Q: Can I share tapes with my team?**
-A: Yes. Commit your `.playingpack/tapes/` directory to version control. Everyone on the team gets the same deterministic behavior.
+**Q: Can I share cached responses with my team?**
+A: Yes. Commit your `.playingpack/cache/` directory to version control. Everyone on the team gets the same deterministic behavior.
 
 ---
 

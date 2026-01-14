@@ -10,7 +10,7 @@ describe('SessionManager', () => {
   });
 
   describe('createSession', () => {
-    it('should create a new session with processing state (intervene off)', () => {
+    it('should create a new session with pending state (intervene on by default)', () => {
       const session = manager.createSession('test-id', {
         model: 'gpt-4',
         messages: [{ role: 'user', content: 'Hello' }],
@@ -18,14 +18,14 @@ describe('SessionManager', () => {
       });
 
       expect(session.id).toBe('test-id');
-      expect(session.state).toBe('processing'); // Default: intervene is false
+      expect(session.state).toBe('pending'); // Default: intervene is true
       expect(session.request.model).toBe('gpt-4');
       expect(session.request.stream).toBe(true);
       expect(session.cacheHit).toBe(false);
     });
 
-    it('should create a new session with pending state when intervene is on', () => {
-      manager.updateSettings({ intervene: true });
+    it('should create a new session with processing state when intervene is off', () => {
+      manager.updateSettings({ intervene: false });
       const session = manager.createSession('test-id', {
         model: 'gpt-4',
         messages: [{ role: 'user', content: 'Hello' }],
@@ -33,7 +33,7 @@ describe('SessionManager', () => {
       });
 
       expect(session.id).toBe('test-id');
-      expect(session.state).toBe('pending'); // Intervene is true
+      expect(session.state).toBe('processing'); // Intervene is false
     });
 
     it('should emit request_update event', () => {
@@ -226,13 +226,13 @@ describe('SessionManager', () => {
     it('should get and update settings', () => {
       const defaultSettings = manager.getSettings();
       expect(defaultSettings.cache).toBe('read-write');
-      expect(defaultSettings.intervene).toBe(false);
+      expect(defaultSettings.intervene).toBe(true);
 
-      manager.updateSettings({ cache: 'read', intervene: true });
+      manager.updateSettings({ cache: 'read', intervene: false });
 
       const newSettings = manager.getSettings();
       expect(newSettings.cache).toBe('read');
-      expect(newSettings.intervene).toBe(true);
+      expect(newSettings.intervene).toBe(false);
     });
   });
 
