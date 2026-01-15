@@ -2,6 +2,13 @@ import { createParser, type ParsedEvent, type ReconnectInterval } from 'eventsou
 import type { ToolCall } from '@playingpack/shared';
 
 /**
+ * Internal tool call with index for tracking during streaming
+ */
+interface InternalToolCall extends ToolCall {
+  index: number;
+}
+
+/**
  * OpenAI SSE chunk delta structure
  */
 interface ChunkDelta {
@@ -61,7 +68,7 @@ export interface SSECallbacks {
  */
 export class SSEStreamParser {
   private callbacks: SSECallbacks;
-  private toolCalls: Map<number, ToolCall> = new Map();
+  private toolCalls: Map<number, InternalToolCall> = new Map();
   private accumulatedContent: string = '';
   private finishReason: string | null = null;
   private usage: SSEUsage | null = null;
@@ -194,7 +201,7 @@ export class SSEStreamParser {
 
             if (!existing) {
               // New tool call
-              const toolCall: ToolCall = {
+              const toolCall: InternalToolCall = {
                 index: tc.index,
                 id: tc.id || '',
                 name: tc.function?.name || '',
