@@ -1,12 +1,26 @@
 import { initTRPC } from '@trpc/server';
 import { z } from 'zod';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 import type { Context } from './context.js';
 import { updateSettingsSchema, point1ActionSchema, point2ActionSchema } from '@playingpack/shared';
 
 const require = createRequire(import.meta.url);
-// Path is relative to dist/index.js after bundling
-const pkg = require('../package.json') as { version: string };
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Find package.json - works in both dev (src/trpc/) and prod (dist/)
+function loadPackageJson(): { version: string } {
+  // Try prod path first (../package.json from dist/index.js)
+  try {
+    return require(resolve(__dirname, '../package.json'));
+  } catch {
+    // Fall back to dev path (../../package.json from src/trpc/)
+    return require(resolve(__dirname, '../../package.json'));
+  }
+}
+
+const pkg = loadPackageJson();
 
 const t = initTRPC.context<Context>().create();
 

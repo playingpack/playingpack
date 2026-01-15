@@ -2,21 +2,29 @@ import type { RequestState } from '@playingpack/shared';
 
 interface StatusBadgeProps {
   state: RequestState;
-  cacheHit?: boolean;
 }
 
-export function StatusBadge({ state, cacheHit }: StatusBadgeProps) {
+/**
+ * StatusBadge - Shows the lifecycle state of a request
+ *
+ * Labels:
+ * - PAUSED: waiting for human action at intervention point 1
+ * - CALLING: getting response from LLM or cache
+ * - REVIEW: waiting for human action at intervention point 2
+ * - DONE: request complete
+ */
+export function StatusBadge({ state }: StatusBadgeProps) {
   const getStatusInfo = (): { label: string; className: string } => {
     switch (state) {
       case 'pending':
         return {
-          label: 'WAITING',
+          label: 'PAUSED',
           className: 'bg-orange-500/10 text-orange-400 border border-orange-500/30 animate-pulse',
         };
       case 'processing':
         return {
-          label: 'PROCESSING',
-          className: 'bg-blue-500/10 text-blue-400 border border-blue-500/30',
+          label: 'CALLING',
+          className: 'bg-blue-500/10 text-blue-400 border border-blue-500/30 animate-pulse',
         };
       case 'reviewing':
         return {
@@ -24,12 +32,6 @@ export function StatusBadge({ state, cacheHit }: StatusBadgeProps) {
           className: 'bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse',
         };
       case 'complete':
-        if (cacheHit) {
-          return {
-            label: 'CACHED',
-            className: 'bg-teal-500/10 text-teal-400 border border-teal-500/30',
-          };
-        }
         return {
           label: 'DONE',
           className: 'bg-green-500/10 text-green-400 border border-green-500/30',

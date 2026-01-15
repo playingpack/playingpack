@@ -91,7 +91,7 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   const cacheOnly = proxyConfig.cache === 'read';
 
   const hasCache = shouldReadCache && (await cacheExists(body, proxyConfig.cachePath));
-  sessionManager.setCacheHit(requestId, hasCache);
+  sessionManager.setCacheAvailable(requestId, hasCache);
 
   // =========================================================================
   // INTERVENTION POINT 1: Request arrived
@@ -214,7 +214,8 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
       sendBufferedResponse(reply, responseData, clientStream);
     }
 
-    // Complete the session
+    // Set response source and complete the session
+    sessionManager.setResponseSource(requestId, responseSource);
     sessionManager.complete(requestId);
     logger.info('Request completed', { requestId, source: responseSource });
   } catch (error) {
@@ -284,11 +285,17 @@ async function getFromLLM(
   const sessionManager = getSessionManager();
   const body = requestBody as Record<string, unknown>;
 
+  // Inject stream_options to get token usage in streaming responses
+  const bodyWithUsage = {
+    ...body,
+    stream_options: { include_usage: true },
+  };
+
   const response = await sendUpstream({
     method: 'POST',
     path: '/v1/chat/completions',
     headers: request.headers,
-    body,
+    body: bodyWithUsage,
     upstreamUrl: proxyConfig.upstream,
   });
 
@@ -301,7 +308,7 @@ async function getFromLLM(
   const recorder = shouldWriteCache ? new CacheRecorder(proxyConfig.cachePath) : null;
   recorder?.start(requestBody);
 
-  // SSE parser for detecting tool calls
+  // SSE parser for detecting tool calls, finish reason, and usage
   const parser = createSSEParser({
     onToolCall: (toolCall) => {
       sessionManager.addToolCall(requestId, toolCall);
@@ -309,6 +316,13 @@ async function getFromLLM(
     },
     onContent: (content) => {
       sessionManager.appendContent(requestId, content);
+    },
+    onFinishReason: (reason) => {
+      sessionManager.setFinishReason(requestId, reason);
+    },
+    onUsage: (usage) => {
+      sessionManager.setUsage(requestId, usage);
+      console.log(`  [USAGE] ${usage.prompt_tokens} prompt, ${usage.completion_tokens} completion`);
     },
   });
 

@@ -1,6 +1,7 @@
 import type {
   RequestSession,
   RequestState,
+  ResponseSource,
   ToolCall,
   Settings,
   WSEvent,
@@ -57,9 +58,13 @@ export class SessionManager {
         model,
         messages,
         stream,
+        tools: requestBody?.tools as unknown[] | undefined,
+        temperature: requestBody?.temperature as number | undefined,
+        maxTokens: requestBody?.max_tokens as number | undefined,
+        raw: body,
       },
       cacheKey: hashRequest(body),
-      cacheHit: false,
+      cacheAvailable: false,
     };
 
     this.sessions.set(id, session);
@@ -94,10 +99,17 @@ export class SessionManager {
   }
 
   /**
-   * Set session to processing state
+   * Set session to processing state and record start time
    */
   setProcessing(id: string): void {
-    this.updateState(id, 'processing');
+    const session = this.sessions.get(id);
+    if (session) {
+      session.state = 'processing';
+      if (!session.processingStartedAt) {
+        session.processingStartedAt = new Date().toISOString();
+      }
+      this.emit({ type: 'request_update', session });
+    }
   }
 
   /**
@@ -108,12 +120,23 @@ export class SessionManager {
   }
 
   /**
-   * Set cache hit status
+   * Set whether a cached response is available
    */
-  setCacheHit(id: string, hit: boolean): void {
+  setCacheAvailable(id: string, available: boolean): void {
     const session = this.sessions.get(id);
     if (session) {
-      session.cacheHit = hit;
+      session.cacheAvailable = available;
+      this.emit({ type: 'request_update', session });
+    }
+  }
+
+  /**
+   * Set the response source (where the response came from)
+   */
+  setResponseSource(id: string, source: ResponseSource): void {
+    const session = this.sessions.get(id);
+    if (session) {
+      session.responseSource = source;
       this.emit({ type: 'request_update', session });
     }
   }
@@ -154,6 +177,41 @@ export class SessionManager {
       }
       session.response.content += content;
       // Don't emit on every append to reduce noise
+    }
+  }
+
+  /**
+   * Set finish reason on response
+   */
+  setFinishReason(id: string, reason: string): void {
+    const session = this.sessions.get(id);
+    if (session) {
+      if (!session.response) {
+        session.response = { status: 200, content: '', toolCalls: [] };
+      }
+      session.response.finishReason = reason;
+      this.emit({ type: 'request_update', session });
+    }
+  }
+
+  /**
+   * Set token usage on response
+   */
+  setUsage(
+    id: string,
+    usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  ): void {
+    const session = this.sessions.get(id);
+    if (session) {
+      if (!session.response) {
+        session.response = { status: 200, content: '', toolCalls: [] };
+      }
+      session.response.usage = {
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+        totalTokens: usage.total_tokens,
+      };
+      this.emit({ type: 'request_update', session });
     }
   }
 
@@ -229,7 +287,7 @@ export class SessionManager {
     const resolver = this.point1Resolvers.get(id);
     if (resolver) {
       this.point1Resolvers.delete(id);
-      this.updateState(id, 'processing');
+      this.setProcessing(id); // Use setProcessing to record start time
       resolver.resolve(action);
       return true;
     }

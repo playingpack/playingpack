@@ -78,6 +78,15 @@ export interface Settings {
  */
 export type RequestState = 'pending' | 'processing' | 'reviewing' | 'complete';
 
+/**
+ * Response source - where did the response come from?
+ *
+ * - llm: fresh response from the upstream LLM
+ * - cache: served from cached response
+ * - mock: manually mocked/injected response
+ */
+export type ResponseSource = 'llm' | 'cache' | 'mock';
+
 /** Tool call detected in response */
 export interface ToolCall {
   /** Tool call ID from OpenAI */
@@ -88,6 +97,13 @@ export interface ToolCall {
   arguments: string;
 }
 
+/** Token usage from LLM response */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 /** Active request session */
 export interface RequestSession {
   /** Unique request ID */
@@ -96,6 +112,8 @@ export interface RequestSession {
   state: RequestState;
   /** Request timestamp */
   timestamp: string;
+  /** When processing (LLM call) started */
+  processingStartedAt?: string;
   /** Completion timestamp */
   completedAt?: string;
 
@@ -104,17 +122,26 @@ export interface RequestSession {
     model: string;
     messages: unknown[];
     stream: boolean;
+    tools?: unknown[];
+    temperature?: number;
+    maxTokens?: number;
+    raw: unknown;
   };
 
-  /** Cache info */
+  /** Cache key (hash of request) */
   cacheKey: string;
-  cacheHit: boolean;
+  /** Whether a cached response is available for this request */
+  cacheAvailable: boolean;
+  /** Where the response came from (set when complete) */
+  responseSource?: ResponseSource;
 
   /** Response info (populated after response received) */
   response?: {
     status: number;
     content: string;
     toolCalls: ToolCall[];
+    finishReason?: string;
+    usage?: TokenUsage;
   };
 
   /** Error message if any */

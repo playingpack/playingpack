@@ -1,5 +1,6 @@
 import type { RequestSession } from '@playingpack/shared';
 import { StatusBadge } from './StatusBadge';
+import { SourceBadge } from './SourceBadge';
 
 interface RequestItemProps {
   session: RequestSession;
@@ -35,7 +36,10 @@ export function RequestItem({ session, selected, onClick }: RequestItemProps) {
     >
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs text-gray-500 font-mono">{shortId}</span>
-        <StatusBadge state={session.state} cacheHit={session.cacheHit} />
+        <div className="flex items-center gap-1">
+          <StatusBadge state={session.state} />
+          {session.responseSource && <SourceBadge source={session.responseSource} />}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-1">

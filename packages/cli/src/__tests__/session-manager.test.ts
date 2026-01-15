@@ -21,7 +21,8 @@ describe('SessionManager', () => {
       expect(session.state).toBe('pending'); // Default: intervene is true
       expect(session.request.model).toBe('gpt-4');
       expect(session.request.stream).toBe(true);
-      expect(session.cacheHit).toBe(false);
+      expect(session.cacheAvailable).toBe(false);
+      expect(session.responseSource).toBeUndefined();
     });
 
     it('should create a new session with processing state when intervene is off', () => {
@@ -104,13 +105,37 @@ describe('SessionManager', () => {
     });
   });
 
-  describe('cache management', () => {
-    it('should set cache hit status', () => {
+  describe('cache and source management', () => {
+    it('should set cache available status', () => {
       manager.createSession('test-id', { model: 'gpt-4' });
-      manager.setCacheHit('test-id', true);
+      manager.setCacheAvailable('test-id', true);
 
       const session = manager.getSession('test-id');
-      expect(session?.cacheHit).toBe(true);
+      expect(session?.cacheAvailable).toBe(true);
+    });
+
+    it('should set response source', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.setResponseSource('test-id', 'cache');
+
+      const session = manager.getSession('test-id');
+      expect(session?.responseSource).toBe('cache');
+    });
+
+    it('should set response source to llm', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.setResponseSource('test-id', 'llm');
+
+      const session = manager.getSession('test-id');
+      expect(session?.responseSource).toBe('llm');
+    });
+
+    it('should set response source to mock', () => {
+      manager.createSession('test-id', { model: 'gpt-4' });
+      manager.setResponseSource('test-id', 'mock');
+
+      const session = manager.getSession('test-id');
+      expect(session?.responseSource).toBe('mock');
     });
   });
 

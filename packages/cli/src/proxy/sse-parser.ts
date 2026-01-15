@@ -18,6 +18,15 @@ interface ChunkDelta {
 }
 
 /**
+ * OpenAI usage data (included when stream_options.include_usage is true)
+ */
+export interface SSEUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+/**
  * OpenAI SSE chunk structure
  */
 interface SSEChunk {
@@ -30,6 +39,7 @@ interface SSEChunk {
     delta: ChunkDelta;
     finish_reason: string | null;
   }>;
+  usage?: SSEUsage;
 }
 
 /**
@@ -39,6 +49,8 @@ export interface SSECallbacks {
   onContent?: (content: string) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onToolCallUpdate?: (index: number, argumentChunk: string) => void;
+  onFinishReason?: (reason: string) => void;
+  onUsage?: (usage: SSEUsage) => void;
   onDone?: () => void;
   onError?: (error: Error) => void;
 }
@@ -51,6 +63,8 @@ export class SSEStreamParser {
   private callbacks: SSECallbacks;
   private toolCalls: Map<number, ToolCall> = new Map();
   private accumulatedContent: string = '';
+  private finishReason: string | null = null;
+  private usage: SSEUsage | null = null;
   private parser: ReturnType<typeof createParser>;
 
   constructor(callbacks: SSECallbacks = {}) {
@@ -89,6 +103,20 @@ export class SSEStreamParser {
    */
   hasToolCalls(): boolean {
     return this.toolCalls.size > 0;
+  }
+
+  /**
+   * Get the finish reason from the response
+   */
+  getFinishReason(): string | null {
+    return this.finishReason;
+  }
+
+  /**
+   * Get token usage from the response
+   */
+  getUsage(): SSEUsage | null {
+    return this.usage;
   }
 
   /**
@@ -135,6 +163,8 @@ export class SSEStreamParser {
   reset(): void {
     this.toolCalls.clear();
     this.accumulatedContent = '';
+    this.finishReason = null;
+    this.usage = null;
     this.parser.reset();
   }
 
@@ -181,6 +211,18 @@ export class SSEStreamParser {
             }
           }
         }
+
+        // Handle finish reason (appears in final chunk)
+        if (choice.finish_reason && !this.finishReason) {
+          this.finishReason = choice.finish_reason;
+          this.callbacks.onFinishReason?.(choice.finish_reason);
+        }
+      }
+
+      // Handle usage (appears in final chunk when stream_options.include_usage is true)
+      if (chunk.usage && !this.usage) {
+        this.usage = chunk.usage;
+        this.callbacks.onUsage?.(chunk.usage);
       }
     } catch (error) {
       this.callbacks.onError?.(error instanceof Error ? error : new Error(String(error)));
@@ -201,6 +243,8 @@ export function createSSEParser(callbacks?: SSECallbacks): SSEStreamParser {
 export function parseSSEResponse(data: string): {
   content: string;
   toolCalls: ToolCall[];
+  finishReason: string | null;
+  usage: SSEUsage | null;
 } {
   const parser = new SSEStreamParser();
   parser.feed(data);
@@ -208,5 +252,7 @@ export function parseSSEResponse(data: string): {
   return {
     content: parser.getContent(),
     toolCalls: parser.getToolCalls(),
+    finishReason: parser.getFinishReason(),
+    usage: parser.getUsage(),
   };
 }
