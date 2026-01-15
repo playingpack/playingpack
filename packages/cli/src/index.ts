@@ -22,7 +22,7 @@ program
   .option('--upstream <url>', 'Upstream API URL (default: https://api.openai.com)')
   .option('--cache-path <path>', 'Directory for cached responses (default: .playingpack/cache)')
   .option('--cache <mode>', 'Cache mode: off, read, read-write (default: read-write)')
-  .option('--intervene', 'Enable intervention mode (pause for human actions)')
+  .option('--no-intervene', 'Disable intervention mode (no pausing for human actions)')
   .action(async (options) => {
     console.log();
     console.log('  ╔═══════════════════════════════════════════════════════════╗');

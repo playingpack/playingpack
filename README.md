@@ -170,7 +170,7 @@ Your tests become:
 
 Enable intervene mode to pause requests and inspect what your agent is doing:
 
-1. Start PlayingPack with `--intervene` flag or enable in the dashboard
+1. Start PlayingPack (intervention mode is enabled by default)
 2. Run your agent
 3. At **Point 1** (before LLM call), choose:
    - **Allow** — Send the original request to the LLM
@@ -186,7 +186,7 @@ Run your test suite against cached responses in CI:
 
 ```bash
 # In your CI pipeline
-npx playingpack start --no-ui --cache read &
+npx playingpack start --no-ui --no-intervene --cache read &
 sleep 2  # Wait for server
 npm test
 ```
@@ -197,7 +197,7 @@ If a cached response is missing, the request fails immediately — no surprise A
 # Example GitHub Actions step
 - name: Run tests with PlayingPack
   run: |
-    npx playingpack start --no-ui --cache read &
+    npx playingpack start --no-ui --no-intervene --cache read &
     sleep 2
     npm test
 ```
@@ -315,7 +315,7 @@ npx playingpack start [options]
 | `--upstream <url>` | Upstream API URL | `https://api.openai.com` |
 | `--cache-path <path>` | Directory for cache storage | `.playingpack/cache` |
 | `--cache <mode>` | Cache mode (`off`, `read`, `read-write`) | `read-write` |
-| `--intervene` | Enable human intervention mode | `true` |
+| `--no-intervene` | Disable human intervention mode | `false` |
 
 ### Examples
 
@@ -323,14 +323,14 @@ npx playingpack start [options]
 # Proxy to a local LLM (Ollama)
 npx playingpack start --upstream http://localhost:11434/v1
 
-# CI mode: read-only cache, no UI, fail if cache missing
-npx playingpack start --no-ui --cache read
+# CI mode: read-only cache, no UI, no intervention
+npx playingpack start --no-ui --no-intervene --cache read
 
 # Custom port and cache directory
 npx playingpack start --port 8080 --cache-path ./test/fixtures/cache
 
-# Enable intervention mode for debugging
-npx playingpack start --intervene
+# Disable intervention mode for CI/CD
+npx playingpack start --no-intervene
 ```
 
 ---
