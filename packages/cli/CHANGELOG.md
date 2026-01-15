@@ -1,5 +1,15 @@
 # playingpack
 
+## 0.7.0
+
+### Minor Changes
+
+- c484d92: Replace `--intervene` flag with `--no-intervene` for CLI consistency
+  - Changed from opt-in `--intervene` to opt-out `--no-intervene` flag
+  - Intervention mode is now enabled by default (matches existing config default)
+  - Updated all CI/CD examples to include `--no-intervene` to prevent pipeline hangs
+  - Updated documentation in both root and package README files
+
 ## 0.6.0
 
 ### Minor Changes
