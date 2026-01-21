@@ -65,7 +65,7 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   const requestId = crypto.randomUUID();
   const body = request.body as Record<string, unknown>;
 
-  // Extract stream parameter (default true per OpenAI spec)
+  // Extract stream parameter (proxy defaults to true for internal handling)
   const clientStream = body.stream !== false;
 
   // Log request
@@ -286,10 +286,19 @@ async function getFromLLM(
   const body = requestBody as Record<string, unknown>;
 
   // Inject stream_options to get token usage in streaming responses
-  const bodyWithUsage = {
-    ...body,
-    stream_options: { include_usage: true },
-  };
+  // Only allowed when stream is explicitly true (OpenAI defaults stream to false)
+  const bodyWithUsage =
+    body.stream === true
+      ? {
+          ...body,
+          stream_options: {
+            ...(typeof body.stream_options === 'object' && body.stream_options !== null
+              ? body.stream_options
+              : {}),
+            include_usage: true,
+          },
+        }
+      : body;
 
   const response = await sendUpstream({
     method: 'POST',

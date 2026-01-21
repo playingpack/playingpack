@@ -76,7 +76,7 @@ export async function sendUpstream(options: UpstreamOptions): Promise<UpstreamRe
   const baseUrl = options.upstreamUrl || OPENAI_API_URL;
   const url = `${baseUrl}${options.path}`;
 
-  // Extract stream parameter from body (default true per OpenAI spec)
+  // Extract stream parameter from body (proxy defaults to true for Accept header)
   const stream =
     typeof options.body === 'object' &&
     options.body !== null &&
