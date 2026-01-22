@@ -320,32 +320,74 @@ async function getFromLLM(
   const recorder = shouldWriteCache ? new CacheRecorder(proxyConfig.cachePath) : null;
   recorder?.start(requestBody);
 
-  // SSE parser for detecting tool calls, finish reason, and usage
-  const parser = createSSEParser({
-    onToolCall: (toolCall) => {
-      sessionManager.addToolCall(requestId, toolCall);
-      console.log(`  [TOOL CALL] ${toolCall.name}`);
-    },
-    onContent: (content) => {
-      sessionManager.appendContent(requestId, content);
-    },
-    onFinishReason: (reason) => {
-      sessionManager.setFinishReason(requestId, reason);
-    },
-    onUsage: (usage) => {
-      sessionManager.setUsage(requestId, usage);
-      console.log(`  [USAGE] ${usage.prompt_tokens} prompt, ${usage.completion_tokens} completion`);
-    },
-  });
-
   // Buffer the full response (don't send yet - wait for intervention point 2)
   let fullContent = '';
   const stream = streamToGenerator(response.body);
 
   for await (const chunk of stream) {
-    parser.feed(chunk);
     recorder?.recordChunk(chunk);
     fullContent += chunk;
+  }
+
+  // Parse response based on whether it's streaming or not
+  const isStreaming = body.stream === true;
+
+  if (isStreaming) {
+    // SSE parser for streaming responses
+    const parser = createSSEParser({
+      onToolCall: (toolCall) => {
+        sessionManager.addToolCall(requestId, toolCall);
+        console.log(`  [TOOL CALL] ${toolCall.name}`);
+      },
+      onContent: (content) => {
+        sessionManager.appendContent(requestId, content);
+      },
+      onFinishReason: (reason) => {
+        sessionManager.setFinishReason(requestId, reason);
+      },
+      onUsage: (usage) => {
+        sessionManager.setUsage(requestId, usage);
+        console.log(
+          `  [USAGE] ${usage.prompt_tokens} prompt, ${usage.completion_tokens} completion`
+        );
+      },
+    });
+    parser.feed(fullContent);
+  } else {
+    // JSON parser for non-streaming responses
+    try {
+      const jsonResponse = JSON.parse(fullContent);
+      const choice = jsonResponse.choices?.[0];
+      const message = choice?.message;
+
+      if (message?.content) {
+        sessionManager.appendContent(requestId, message.content);
+      }
+
+      if (message?.tool_calls) {
+        for (const tc of message.tool_calls) {
+          sessionManager.addToolCall(requestId, {
+            id: tc.id,
+            name: tc.function?.name || '',
+            arguments: tc.function?.arguments || '',
+          });
+          console.log(`  [TOOL CALL] ${tc.function?.name}`);
+        }
+      }
+
+      if (choice?.finish_reason) {
+        sessionManager.setFinishReason(requestId, choice.finish_reason);
+      }
+
+      if (jsonResponse.usage) {
+        sessionManager.setUsage(requestId, jsonResponse.usage);
+        console.log(
+          `  [USAGE] ${jsonResponse.usage.prompt_tokens} prompt, ${jsonResponse.usage.completion_tokens} completion`
+        );
+      }
+    } catch (e) {
+      console.error(`  [PARSE ERROR] Failed to parse non-streaming response:`, e);
+    }
   }
 
   // Save to cache
