@@ -1,6 +1,6 @@
 {
   "name": "playingpack",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Chrome DevTools for AI Agents - Local reverse proxy and debugger for LLM API calls",
   "type": "module",
   "bin": {
