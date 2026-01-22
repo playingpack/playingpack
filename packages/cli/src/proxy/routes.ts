@@ -197,6 +197,8 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
         case 'modify':
           console.log(`  [ACTION] Modify response`);
           if (action.content) {
+            // Clear old response content before replacing
+            sessionManager.clearResponse(requestId);
             // Replace response with modified content
             const modifiedData = await generateMockResponseData(
               reply,
@@ -364,14 +366,16 @@ async function getFromLLM(
  */
 async function generateMockResponseData(
   _reply: FastifyReply,
-  _requestId: string,
+  requestId: string,
   mockContent: string,
   clientStream: boolean = true
 ): Promise<{ content: string; status: number; mocked: boolean }> {
+  const sessionManager = getSessionManager();
   const parsed = parseMockContent(mockContent);
 
   if (parsed.type === 'error') {
     const errorResponse = generateErrorResponse(parsed.content);
+    sessionManager.appendContent(requestId, parsed.content);
     return { content: errorResponse, status: 400, mocked: true };
   }
 
@@ -384,6 +388,16 @@ async function generateMockResponseData(
     let fullContent = '';
     for await (const chunk of generator) {
       fullContent += chunk;
+    }
+
+    // Update session with mock content
+    sessionManager.appendContent(requestId, parsed.content);
+    if (parsed.type === 'tool_call') {
+      sessionManager.addToolCall(requestId, {
+        id: `call_mock_${Date.now()}`,
+        name: parsed.functionName || 'mock_function',
+        arguments: parsed.content,
+      });
     }
 
     return { content: fullContent, status: 200, mocked: true };

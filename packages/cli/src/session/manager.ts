@@ -181,6 +181,17 @@ export class SessionManager {
   }
 
   /**
+   * Clear response content and tool calls (used when modifying response)
+   */
+  clearResponse(id: string): void {
+    const session = this.sessions.get(id);
+    if (session && session.response) {
+      session.response.content = '';
+      session.response.toolCalls = [];
+    }
+  }
+
+  /**
    * Set finish reason on response
    */
   setFinishReason(id: string, reason: string): void {
