@@ -1,5 +1,27 @@
 # playingpack
 
+## 0.7.2
+
+### Patch Changes
+
+- 1fc5763: Fix cache toggle not taking effect when changed in UI
+  - Cache mode setting now reads from session manager instead of static startup config
+  - UI changes to cache mode (Off/Read/R/W) now properly affect request handling
+
+- dc5e890: Fix mock and modified responses not displaying in UI
+  - Mock responses now update session content so they appear in the response panel
+  - Point 2 modifications now clear old content before setting new content
+  - Added `clearResponse` method to session manager for response modifications
+
+- c164fdc: Fix non-streaming responses not displaying in UI
+  - Non-streaming responses (`stream: false`) are now parsed as JSON instead of SSE
+  - Content, tool calls, finish reason, and usage are properly extracted from JSON responses
+  - Both streaming and non-streaming responses now display correctly in the UI
+
+- 8194282: Fix Stream field in UI showing "true" when request doesn't specify stream
+  - Session manager now correctly defaults `stream` to `false` (matching OpenAI's actual default)
+  - UI now accurately reflects whether streaming was requested
+
 ## 0.7.1
 
 ### Patch Changes
