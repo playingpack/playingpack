@@ -85,10 +85,11 @@ async function handleChatCompletions(request: FastifyRequest, reply: FastifyRepl
   // Create session
   sessionManager.createSession(requestId, body);
 
-  // Check cache status
-  const shouldReadCache = proxyConfig.cache !== 'off';
-  const shouldWriteCache = proxyConfig.cache === 'read-write';
-  const cacheOnly = proxyConfig.cache === 'read';
+  // Check cache status (read from session manager for dynamic UI updates)
+  const cacheMode = sessionManager.getSettings().cache;
+  const shouldReadCache = cacheMode !== 'off';
+  const shouldWriteCache = cacheMode === 'read-write';
+  const cacheOnly = cacheMode === 'read';
 
   const hasCache = shouldReadCache && (await cacheExists(body, proxyConfig.cachePath));
   sessionManager.setCacheAvailable(requestId, hasCache);
