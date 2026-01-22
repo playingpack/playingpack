@@ -48,7 +48,7 @@ export class SessionManager {
     const requestBody = body as Record<string, unknown>;
     const model = typeof requestBody?.model === 'string' ? requestBody.model : 'unknown';
     const messages = Array.isArray(requestBody?.messages) ? requestBody.messages : [];
-    const stream = requestBody?.stream !== false; // Default to true per OpenAI spec
+    const stream = requestBody?.stream === true; // OpenAI defaults stream to false
 
     const session: RequestSession = {
       id,
