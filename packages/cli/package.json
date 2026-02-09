@@ -57,7 +57,7 @@
     "@playingpack/shared": "workspace:*",
     "@types/node": "^20.11.0",
     "@types/ws": "^8.5.10",
-    "@vitest/coverage-v8": "^1.2.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "tsup": "^8.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
